@@ -1,0 +1,420 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>任务进度 · {{ job_id }}</title>
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif; }
+    .hero-grad { background: linear-gradient(135deg, #06b6d4 0%, #22d3ee 25%, #c084fc 60%, #f0abfc 80%, #ec4899 100%); background-attachment: fixed; }
+    .btn-tea { background: linear-gradient(to right, #6B8E5A, #FFB347); }
+    .text-tea { color: #6B8E5A; }
+    .text-tea-dark { color: #5F7A4A; }
+    .text-orange-light { color: #F97316; text-shadow: 0 1px 4px rgba(255,255,255,0.5); }
+    /* 顶部导航栏：白色 50% 透明 */
+    .bg-header-ip {
+      background: rgba(255,255,255,.50);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-color: rgba(255,255,255,.4);
+    }
+    /* 卡片/面板：白色 50% 透明 */
+    .bg-card-ip {
+      background: rgba(255,255,255,.50);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(255,255,255,.4);
+    }
+    /* 进度条填充：瓷蓝色 */
+    .fill-porcelain { background: linear-gradient(to right, #8fc2e5, #4f94c6); }
+    .tea-icon {
+      width: 48px; height: 48px;
+      border-radius: 12px;
+      overflow: hidden;
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+      border: 1.5px solid rgba(255,255,255,0.45);
+      background: white;
+      flex-shrink: 0;
+    }
+    .tea-icon img { width: 100%; height: 100%; object-fit: contain; display: block; }
+    /* 全局 loading 遮罩：点击提交/确认按钮后显示 */
+    .loading-mask {
+      position: fixed; inset: 0; z-index: 9999;
+      background: rgba(15, 23, 42, 0.55);
+      backdrop-filter: blur(3px);
+      display: none;
+      align-items: center; justify-content: center;
+      flex-direction: column; gap: 14px;
+    }
+    .loading-mask.active { display: flex; }
+    .loading-mask .spinner {
+      width: 56px; height: 56px;
+      border: 5px solid rgba(255,255,255,0.3);
+      border-top-color: #f0abfc; border-right-color: #c084fc;
+      border-radius: 50%;
+      animation: spin 0.9s linear infinite;
+    }
+    .loading-mask .msg {
+      color: white; font-weight: 600; font-size: 15px;
+      text-shadow: 0 1px 4px rgba(0,0,0,0.35);
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .progress-bar { height: 12px; border-radius: 6px; background: rgba(148,163,184,0.25); overflow: hidden; }
+    .progress-fill { height: 100%; border-radius: 6px; background: linear-gradient(to right, #8fc2e5, #4f94c6); transition: width .4s ease; }
+    .seg-pill { display:inline-flex; align-items:center; justify-content:center; width:32px; height:32px; border-radius:50%; font-size:12px; font-weight:700; }
+    .seg-pending { background:#e2e8f0; color:#475569; }
+    .seg-previewing { background:#fef3c7; color:#92400e; }
+    .seg-human_review { background:#fef3c7; color:#92400e; }
+    .seg-rendering { background:#cffafe; color:#0e7490; animation: segpulse 1.4s infinite; }
+    .seg-rendered { background:#d1fae5; color:#065f46; }
+    .seg-skipped { background:#f1f5f9; color:#94a3b8; text-decoration: line-through; }
+    .seg-failed { background:#fee2e2; color:#991b1b; }
+    @keyframes segpulse { 0%,100%{opacity:1;} 50%{opacity:0.55;} }
+  </style>
+</head>
+<body class="min-h-screen text-slate-800 hero-grad">
+  <!-- 导航栏 -->
+  <header class="sticky top-0 z-40 bg-header-ip border-b shadow-sm">
+    <div class="max-w-5xl mx-auto px-6 py-3 flex items-center gap-3">
+      <div class="tea-icon shrink-0"><img src="/static/logo.png" alt="茶辑"></div>
+      <div class="flex flex-col leading-tight">
+        <span class="font-bold text-lg text-tea">茶辑</span>
+        <span class="text-xs text-slate-500">任务 ID：<b class="text-slate-700">{{ job_id }}</b></span>
+      </div>
+      <nav class="ml-auto flex items-center gap-1.5 text-sm">
+        <a href="/" class="px-3 py-1.5 rounded-lg text-white/85 hover:text-white hover:bg-white/20 transition">首页</a>
+        <a href="/tasks" class="px-3 py-1.5 rounded-lg text-white/85 hover:text-white hover:bg-white/20 transition">任务列表</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="max-w-5xl mx-auto px-6 py-10 space-y-6">
+    <!-- 标题 -->
+    <section class="text-center">
+      <h1 class="text-3xl md:text-4xl font-extrabold tracking-tight text-tea-dark drop-shadow-sm">任务进度</h1>
+      <p class="mt-2 text-sm text-orange-light">任务 ID：{{ job_id }}</p>
+    </section>
+
+    <!-- 状态卡片 -->
+    <div class="bg-card-ip rounded-2xl shadow-xl p-6 space-y-4">
+      <div class="flex flex-wrap items-center justify-between gap-3">
+        <div class="flex items-center gap-3">
+          <div id="statusIcon" class="w-12 h-12 rounded-2xl flex items-center justify-center text-2xl
+            {% if state.status == 'completed' %}bg-emerald-50{% elif state.status == 'failed' %}bg-red-50{% else %}bg-cyan-50{% endif %}">
+            {% if state.status == 'completed' %}✅{% elif state.status == 'failed' %}❌{% else %}⏳{% endif %}
+          </div>
+          <div>
+            <div class="text-xs text-slate-500">当前状态</div>
+            <div id="statusText" class="text-lg font-bold text-tea-dark">{{ state.status }}</div>
+          </div>
+        </div>
+        <div class="text-right">
+          <div class="text-xs text-slate-500">已生成 / 计划视频</div>
+          <div class="text-lg font-bold text-tea-dark"><span id="outputsCount">{{ final_outputs_count }}</span> / <span id="segmentsTotal">{{ outputs_total }}</span></div>
+        </div>
+      </div>
+
+      <!-- 进度条 -->
+      <div>
+        <div class="flex justify-between text-xs text-slate-500 mb-1">
+          <span id="progressMsg">{{ (state.render_progress.message if state.render_progress else '') or '' }}</span>
+          <span id="progressPct">{{ '%0.0f'|format((final_outputs_count / segments_total * 100) if segments_total > 0 else 0) }}%</span>
+        </div>
+        <div class="progress-bar">
+          <div id="progressFill" class="progress-fill" style="width: {{ ((final_outputs_count / segments_total * 100) if segments_total > 0 else 0)|round }}%"></div>
+        </div>
+        <p id="renderHint" class="text-xs text-slate-500 mt-1.5 min-h-[1rem]"></p>
+      </div>
+
+      <!-- 错误信息 -->
+      <div id="errorBox" class="hidden rounded-xl bg-red-50 border border-red-200 p-4 text-sm text-red-700">
+        <div class="flex items-start gap-2">
+          <span class="text-lg shrink-0">⚠️</span>
+          <div>
+            <p class="font-semibold mb-1">任务失败</p>
+            <p id="errorText" class="text-red-600 break-all"></p>
+          </div>
+        </div>
+      </div>
+
+      <!-- 操作按钮 -->
+      <div id="actionRow" class="flex flex-wrap gap-2 pt-2 border-t border-slate-200">
+        {% if state.status == 'reviewing_segment' %}
+        <a id="continueReviewBtn" href="/job/{{ job_id }}/review-segment/{{ current_segment_idx }}" class="ml-auto btn-tea px-5 py-2 rounded-xl text-white text-sm font-semibold shadow-md transition transform hover:scale-[1.02] hover:shadow-lg active:scale-95">下一步：审核片段 →</a>
+        {% endif %}
+        {% if state.status == 'completed' %}
+        <a href="/job/{{ job_id }}/done" class="ml-auto btn-tea px-5 py-2 rounded-xl text-white text-sm font-semibold shadow-md transition transform hover:scale-[1.02] hover:shadow-lg active:scale-95">查看结果 →</a>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- 段落状态网格 -->
+    <div class="bg-card-ip rounded-2xl shadow-xl p-6">
+      <h2 class="font-bold text-tea-dark mb-3">🎞️ 片段进度</h2>
+      <div id="segGrid" class="flex flex-wrap gap-2">
+        {% for s in seg_status_list %}
+        <div class="flex flex-col items-center gap-1" title="第{{ s.idx+1 }}段: {{ s.status }}">
+          <span class="seg-pill seg-{{ s.status }}">{{ s.idx+1 }}</span>
+        </div>
+        {% endfor %}
+        {% if seg_status_list|length == 0 %}
+        <span class="text-sm text-slate-400 italic">暂无片段</span>
+        {% endif %}
+      </div>
+      <div class="mt-3 flex flex-wrap gap-3 text-xs text-slate-500">
+        <span class="inline-flex items-center gap-1"><span class="seg-pill seg-pending inline-flex" style="width:18px;height:18px;font-size:10px;">·</span> 待处理</span>
+        <span class="inline-flex items-center gap-1"><span class="seg-pill seg-rendering inline-flex" style="width:18px;height:18px;font-size:10px;">·</span> 渲染中</span>
+        <span class="inline-flex items-center gap-1"><span class="seg-pill seg-rendered inline-flex" style="width:18px;height:18px;font-size:10px;">·</span> 已完成</span>
+        <span class="inline-flex items-center gap-1"><span class="seg-pill seg-skipped inline-flex" style="width:18px;height:18px;font-size:10px;">·</span> 跳过</span>
+        <span class="inline-flex items-center gap-1"><span class="seg-pill seg-failed inline-flex" style="width:18px;height:18px;font-size:10px;">·</span> 失败</span>
+      </div>
+    </div>
+
+    <!-- 底部提示 + 链接 -->
+    <div class="text-center space-y-3">
+      <p class="text-xs text-white/85">你可以离开此页面，稍后在任务列表中查看进度</p>
+      <div class="flex flex-wrap justify-center gap-3">
+        <a href="/" class="px-4 py-2 rounded-xl bg-white/70 border border-white/60 text-slate-600 text-sm font-semibold hover:bg-white/90 transition">← 返回首页</a>
+        <a href="/tasks" class="px-4 py-2 rounded-xl bg-white/70 border border-white/60 text-slate-600 text-sm font-semibold hover:bg-white/90 transition">查看任务列表</a>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    const jobId = "{{ job_id }}";
+    const statusText = document.getElementById('statusText');
+    const statusIcon = document.getElementById('statusIcon');
+    const progressMsg = document.getElementById('progressMsg');
+    const progressPct = document.getElementById('progressPct');
+    const progressFill = document.getElementById('progressFill');
+    const outputsCount = document.getElementById('outputsCount');
+    const segmentsTotal = document.getElementById('segmentsTotal');
+    const segGrid = document.getElementById('segGrid');
+    const renderHint = document.getElementById('renderHint');
+    const errorBox = document.getElementById('errorBox');
+    const errorText = document.getElementById('errorText');
+    const actionRow = document.getElementById('actionRow');
+
+    const STATUS_LABEL = {
+      'rendering': '正在渲染…',
+      'detecting': '正在检测画面区域…（完成后会自动跳转）',
+      'portrait_matching': '正在执行人像匹配…（完成后会自动跳转）',
+      'reviewing_regions': '检测完成，跳转区域审核…',
+      'reviewing_windows': '固定窗口已就绪，进入统一剪辑页面…',
+      'reviewing_segment': '下一段已就绪',
+      'completed': '任务完成',
+      'failed': '任务失败',
+      'pending': '排队中…',
+    };
+
+    // 状态改变时自动跳转到对应页面（解决"上传后停留在首页等待"问题）
+    let lastStatus = null;
+    function autoRedirect(status, curIdx){
+      if (status === lastStatus) return;
+      lastStatus = status;
+      if (status === 'reviewing_regions'){
+        // 仅兼容历史任务的独立区域审核页
+        window.location.href = `/job/${jobId}/review-regions`;
+      } else if (status === 'reviewing_windows') {
+        window.location.href = `/job/${jobId}/review-windows`;
+      } else if (status === 'portrait_matching_done' || status === 'reviewing_portrait'){
+        // 人像匹配完成 → 跳人像选片结果
+        window.location.href = `/job/${jobId}/portrait-results`;
+      } else if (status === 'reviewing_segment' && window.currentJobMode !== 'portrait'){
+        window.location.href = `/job/${jobId}/review-segment/${curIdx}`;
+      }
+    }
+
+    function fmtPct(done, total){
+      if (!total) return 0;
+      return Math.max(0, Math.min(100, (done / total) * 100));
+    }
+
+    function segClass(status){
+      if (status === 'human_review') return 'seg-previewing';
+      return 'seg-' + status;
+    }
+
+    function renderSegs(segs){
+      segGrid.innerHTML = '';
+      if (!segs || !segs.length){
+        segGrid.innerHTML = '<span class="text-sm text-slate-400 italic">暂无片段</span>';
+        return;
+      }
+      segs.forEach(s => {
+        const wrap = document.createElement('div');
+        wrap.className = 'flex flex-col items-center gap-1';
+        wrap.title = `第${s.idx+1}段: ${s.status}`;
+        const pill = document.createElement('span');
+        pill.className = `seg-pill ${segClass(s.status)}`;
+        pill.textContent = s.idx + 1;
+        wrap.appendChild(pill);
+        segGrid.appendChild(wrap);
+      });
+    }
+
+    function setActionButtons(status, curIdx){
+      // 清除已有的动态按钮（保留底部链接所在行结构）
+      actionRow.querySelectorAll('[data-dyn]').forEach(el => el.remove());
+      if (status === 'reviewing_segment' && window.currentJobMode !== 'portrait'){
+        const a = document.createElement('a');
+        a.setAttribute('data-dyn', '1');
+        a.href = `/job/${jobId}/review-segment/${curIdx}`;
+        a.className = 'ml-auto btn-tea px-5 py-2 rounded-xl text-white text-sm font-semibold shadow-md transition transform hover:scale-[1.02] hover:shadow-lg active:scale-95';
+        a.textContent = '下一步：审核片段 →';
+        actionRow.appendChild(a);
+      } else if (status === 'completed'){
+        const a = document.createElement('a');
+        a.setAttribute('data-dyn', '1');
+        a.href = `/job/${jobId}/done`;
+        a.className = 'ml-auto btn-tea px-5 py-2 rounded-xl text-white text-sm font-semibold shadow-md transition transform hover:scale-[1.02] hover:shadow-lg active:scale-95';
+        a.textContent = '查看结果 →';
+        actionRow.appendChild(a);
+      }
+    }
+
+    function updateUI(d){
+      const status = d.status || 'pending';
+      window.currentJobMode = d.mode || 'manual';
+      const total = d.outputs_total || 0;
+      const windowTotal = d.segments_total || 0;
+      const done = d.final_outputs_count || 0;
+      const curIdx = (typeof d.current_segment_idx === 'number') ? d.current_segment_idx : 0;
+      const rp = d.render_progress || {};
+
+      statusText.textContent = STATUS_LABEL[status] || status;
+      progressMsg.textContent = rp.message || '';
+      outputsCount.textContent = done;
+      segmentsTotal.textContent = total;
+
+      // 百分比：有已渲染段数 → 用渲染进度；否则人像扫描阶段 → 用扫描帧进度；否则 0
+      let pct;
+      if (total > 0) {
+        pct = fmtPct(done, total);
+      } else if (rp && typeof rp.total_segs === 'number' && rp.total_segs > 0) {
+        const cur = Math.min(Math.max(0, rp.current_seg || 0), rp.total_segs);
+        pct = cur / rp.total_segs * 100;
+      } else {
+        pct = 0;
+      }
+      progressPct.textContent = pct.toFixed(0) + '%';
+      progressFill.style.width = pct + '%';
+
+      // 状态图标
+      if (status === 'completed'){
+        statusIcon.className = 'w-12 h-12 rounded-2xl flex items-center justify-center text-2xl bg-emerald-50';
+        statusIcon.textContent = '✅';
+      } else if (status === 'failed'){
+        statusIcon.className = 'w-12 h-12 rounded-2xl flex items-center justify-center text-2xl bg-red-50';
+        statusIcon.textContent = '❌';
+      } else {
+        statusIcon.className = 'w-12 h-12 rounded-2xl flex items-center justify-center text-2xl bg-cyan-50';
+        statusIcon.textContent = '⏳';
+      }
+
+      // 渲染提示文案
+      if (total > 0){
+        const x = Math.min(curIdx + 1, total);
+        if (status === 'rendering' || status === 'detecting'){
+          renderHint.textContent = `正在渲染第 ${x} / ${total} 段...`;
+        } else if (status === 'reviewing_segment'){
+          renderHint.textContent = `第 ${x} / ${total} 段预览已就绪，等待你确认。`;
+        } else if (status === 'completed'){
+          renderHint.textContent = `共 ${total} 段已全部渲染完成。`;
+        } else if (status === 'failed'){
+          renderHint.textContent = `在第 ${x} / ${total} 段处理时出错。`;
+        } else {
+          renderHint.textContent = rp.message || '';
+        }
+      } else {
+        // 还没有切分段的阶段：detecting / portrait_matching
+        if (status === 'portrait_matching' || status === 'portrait_matching_done') {
+          renderHint.textContent = rp.message || (status === 'portrait_matching_done' ? '人像匹配完成，结果加载中…' : '人像匹配处理中…');
+        } else if (status === 'failed') {
+          renderHint.textContent = '处理失败。';
+        } else if (status === 'completed') {
+          renderHint.textContent = '任务已完成。';
+        } else {
+          renderHint.textContent = rp.message || '画面初始化检测中，请稍候…';
+        }
+      }
+
+      // 失败信息
+      if (status === 'failed'){
+        errorBox.classList.remove('hidden');
+        errorText.textContent = rp.message || d.error || d.message || '未知错误，请查看日志或联系管理员。';
+      } else {
+        errorBox.classList.add('hidden');
+      }
+
+      renderSegs(d.segments);
+      setActionButtons(status, curIdx);
+      // 状态改变时自动跳转到审核页（解决"停留在等待页面"问题）
+      autoRedirect(status, curIdx);
+    }
+
+    async function poll(){
+      try {
+        const r = await fetch(`/api/job/${jobId}/status`, { cache: 'no-store' });
+        if (r.ok){
+          const d = await r.json();
+          updateUI(d);
+        }
+      } catch(e) { /* ignore */ }
+    }
+
+    // 初次立即拉取，之后每 2 秒轮询
+    poll();
+    let timer = setInterval(poll, 2000);
+    // 页面隐藏时降低频率
+    document.addEventListener('visibilitychange', () => {
+      clearInterval(timer);
+      const interval = document.hidden ? 5000 : 2000;
+      timer = setInterval(poll, interval);
+    });
+
+    function showLoading(msg){
+      // ⚠ 关键：表单字段（text/number/hidden/textarea）必须用 readonly 而不是 disabled，
+      //    否则浏览器 submit 时会剔除这些字段，后端会报 422 Field required。
+      document.querySelectorAll('input, button, textarea, select, a').forEach(el=>{
+        if (el.tagName === 'A') { el.style.pointerEvents='none'; el.classList.add('opacity-50'); return; }
+        const tag = el.tagName;
+        const type = el.getAttribute && el.getAttribute('type');
+        if (tag === 'BUTTON') {
+          el.setAttribute('disabled','disabled');
+          el.classList.add('opacity-60','cursor-not-allowed');
+        } else if (tag === 'SELECT' || type === 'file' || type === 'checkbox' || type === 'radio') {
+          el.style.pointerEvents='none';
+          try { el.addEventListener('keydown', function _bh(e){ e.preventDefault(); e.stopPropagation(); }, {capture:true}); } catch(_){}
+          try { el.tabIndex = -1; } catch(_){}
+          el.classList.add('opacity-60','cursor-not-allowed');
+        } else {
+          el.setAttribute('readonly','readonly');
+          el.classList.add('opacity-60','cursor-not-allowed');
+        }
+      });
+      const mask = document.getElementById('loadingMask');
+      if (mask) {
+        const m = mask.querySelector('.msg'); if (m && msg) m.textContent = msg;
+        mask.classList.add('active');
+      }
+    }
+    document.querySelectorAll('form').forEach(form=>{
+      form.addEventListener('submit', (e)=>{
+        const btn = form.querySelector('button[type="submit"]');
+        showLoading(btn ? (btn.textContent.trim()+'，请稍候…') : '处理中，请稍候…');
+      });
+    });
+    // 非 form 内的独立跳转按钮（确认/下载/生成 等）也绑定
+    document.querySelectorAll('button').forEach(btn=>{
+      const txt = (btn.textContent || '').trim();
+      if (!btn.closest('form') && /确认|开始|生成|下载|删除|提交|下一步/.test(txt)) {
+        btn.addEventListener('click', ()=>showLoading(txt + '，请稍候…'));
+      }
+    });
+  </script>
+  <div id="loadingMask" class="loading-mask"><div class="spinner"></div><div class="msg">处理中，请稍候…</div></div>
+</body>
+</html>

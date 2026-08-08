@@ -1,0 +1,517 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>区域审核 · {{ job_id }}</title>
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif; }
+    .hero-grad { background: linear-gradient(135deg, #06b6d4 0%, #22d3ee 25%, #c084fc 60%, #f0abfc 80%, #ec4899 100%); background-attachment: fixed; }
+    .btn-tea { background: linear-gradient(to right, #6B8E5A, #FFB347); }
+    .text-tea { color: #6B8E5A; }
+    .text-tea-dark { color: #5F7A4A; }
+    .text-orange-light { color: #F97316; text-shadow: 0 1px 4px rgba(255,255,255,0.5); }
+    /* 顶部导航栏：白色 50% 透明 */
+    .bg-header-ip {
+      background: rgba(255,255,255,.50);
+      backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+      border-color: rgba(255,255,255,.4);
+    }
+    /* 卡片/面板：白色 50% 透明 */
+    .bg-card-ip {
+      background: rgba(255,255,255,.50);
+      backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(255,255,255,.4);
+    }
+    .tea-icon {
+      width: 48px; height: 48px;
+      border-radius: 12px;
+      overflow: hidden;
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+      border: 1.5px solid rgba(255,255,255,0.45);
+      background: white;
+      flex-shrink: 0;
+    }
+    .tea-icon img { width: 100%; height: 100%; object-fit: contain; display: block; }
+    /* 全局 loading 遮罩 */
+    .loading-mask {
+      position: fixed; inset: 0; z-index: 9999;
+      background: rgba(15, 23, 42, 0.55);
+      backdrop-filter: blur(3px);
+      display: none;
+      align-items: center; justify-content: center;
+      flex-direction: column; gap: 14px;
+    }
+    .loading-mask.active { display: flex; }
+    .loading-mask .spinner {
+      width: 56px; height: 56px;
+      border: 5px solid rgba(255,255,255,0.3);
+      border-top-color: #f0abfc; border-right-color: #c084fc;
+      border-radius: 50%;
+      animation: spin 0.9s linear infinite;
+    }
+    .loading-mask .msg {
+      color: white; font-weight: 600; font-size: 15px;
+      text-shadow: 0 1px 4px rgba(0,0,0,0.35);
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #img-container { max-width:100%; max-height: 75vh; border-radius:12px; background:#0f172a; display:flex; align-items:center; justify-content:center; overflow:auto; }
+    #canvas-wrap { position: relative; display: inline-block; user-select: none; }
+    #canvas-wrap img { display:block; border-radius:12px; max-width:100%; height:auto; }
+    .rect { position:absolute; border:2px solid; border-radius:4px; box-sizing:border-box; cursor:move; background:transparent; }
+    .rect::after {
+      /* 右下角拖拽手柄 */
+      content:''; position:absolute; right:-4px; bottom:-4px; width:14px; height:14px;
+      background: white; border:2px solid #334155; border-radius: 3px; cursor:nwse-resize;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+    }
+    .rect.logo   { border-color:#10b981; background:rgba(16,185,129,0.10); }
+    /* Logo 模糊预览（半透明绿 + backdrop-filter blur 预览效果） */
+    .rect.logo::before {
+      content: '';
+      position: absolute; inset: 0;
+      background: rgba(16, 185, 129, 0.18);
+      backdrop-filter: blur(4px);
+      -webkit-backdrop-filter: blur(4px);
+      border-radius: 2px;
+      pointer-events: none;
+    }
+    .rect.mask   { border-color:#3b82f6; background:rgba(59,130,246,0.08); overflow: hidden; }
+    /* 蒙版模糊预览：根据强度三档使用不同 blur 半径，加半透明蓝叠加让视觉更像"被处理" */
+    .rect.mask[data-strength="light"]::before {
+      backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
+      background: rgba(59, 130, 246, 0.10);
+    }
+    .rect.mask[data-strength="medium"]::before {
+      backdrop-filter: blur(7px); -webkit-backdrop-filter: blur(7px);
+      background: rgba(59, 130, 246, 0.14);
+    }
+    .rect.mask[data-strength="strong"]::before {
+      backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+      background: rgba(59, 130, 246, 0.22);
+    }
+    .rect.mask::before {
+      content: '';
+      position: absolute; inset: 0;
+      border-radius: 2px;
+      pointer-events: none;
+    }
+    .rect .lbl { position:absolute; top:-18px; left:-2px; font-size:12px; color:white; padding:0 6px; border-radius:4px; white-space:nowrap; z-index: 2; }
+    .logo   .lbl { background:#10b981; }
+    .mask   .lbl { background:#3b82f6; }
+  </style>
+</head>
+<body class="min-h-screen text-slate-800 hero-grad">
+  <!-- 导航栏 -->
+  <header class="sticky top-0 z-40 bg-header-ip border-b shadow-sm">
+    <div class="max-w-6xl mx-auto px-6 py-3 flex items-center gap-3">
+      <div class="tea-icon shrink-0"><img src="/static/logo.png" alt="茶辑"></div>
+      <div class="flex flex-col leading-tight">
+        <span class="font-bold text-lg text-tea">茶辑</span>
+        <span class="text-xs text-slate-500">任务 ID：<b class="text-slate-700">{{ job_id }}</b></span>
+      </div>
+      <nav class="ml-auto flex items-center gap-1.5 text-sm">
+        <a href="/" class="px-3 py-1.5 rounded-lg text-white/85 hover:text-white hover:bg-white/20 transition">首页</a>
+        <a href="/tasks" class="px-3 py-1.5 rounded-lg text-white/85 hover:text-white hover:bg-white/20 transition">任务列表</a>
+        <span class="hidden md:inline-flex items-center gap-1.5 text-xs text-cyan-700 bg-cyan-50 border border-cyan-200 rounded-full px-3 py-1 ml-1">
+          <span class="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-pulse"></span> 区域审核
+        </span>
+      </nav>
+    </div>
+  </header>
+
+  <main class="max-w-6xl mx-auto p-6 space-y-6">
+    <!-- 采样帧预览 -->
+    <div class="bg-card-ip rounded-2xl shadow-xl p-6">
+      <h2 class="text-xl font-bold mb-2 text-tea-dark">确认标识识别与手动蒙版区域</h2>
+      <p class="text-slate-600 text-sm mb-4 leading-relaxed">
+        <span class="text-emerald-600 font-semibold">绿色</span> = 标识/水印区域（将被 boxblur 蒙版模糊）；
+        <span class="text-blue-500 font-semibold">蓝色</span> = 手动蒙版区域（选中区域在<b class="text-pink-600">整个视频时长内保持一致</b>地被模糊）。<br>
+        🔍 <b>预览效果</b>：画面上的绿色/蓝色块上可以直接看到对应强度的模糊预览（真实处理效果由后端 ffmpeg 再精确渲染）。<br>
+        🔧 <b>模糊强度</b>：下拉选择「轻度/中度/重度」3 档，画面上会同步更新模糊程度预览。<br>
+        💡 拖动矩形框可以<b>移动位置</b>；拖动矩形右下角白色方块可以<b>调整大小</b>。
+      </p>
+
+      {% if state.ost_segments %}
+      <!-- OST 检测结果提示 -->
+      <div class="mb-4 rounded-xl bg-gradient-to-r from-cyan-50 to-pink-50 border border-white/70 p-4">
+        <div class="flex items-center gap-2 mb-2">
+          <span class="text-base">🎵</span>
+          <span class="text-sm font-semibold text-slate-800">检测到 OST 片段（共 {{ state.ost_segments|length }} 段）</span>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          {% for o in state.ost_segments %}
+          <span class="text-xs px-2.5 py-1 rounded-full border
+            {% if o.type == 'op' %}bg-cyan-100 text-cyan-700 border-cyan-200{% else %}bg-pink-100 text-pink-700 border-pink-200{% endif %}">
+            {{ '片头 OP' if o.type == 'op' else '片尾 ED' }}：{{ '%0.1f'|format(o.start_sec) }}s – {{ '%0.1f'|format(o.end_sec) }}s · 置信度 {{ (o.confidence*100)|round }}%
+          </span>
+          {% endfor %}
+        </div>
+        <p class="text-xs text-slate-500 mt-2">这些片段将在后续按段审核时可单独跳过或截取。</p>
+      </div>
+      {% endif %}
+
+      <!-- 操作提示 -->
+      <div class="mb-3 text-xs text-slate-500 leading-relaxed">
+        💡 <b class="text-slate-700">操作方法</b>：拖动矩形框可以<b>移动位置</b>；拖动右下角白色小方块可以<b>调整大小</b>；也可以直接在下方输入框中填写精确坐标。新增区域会放在画面左上角，可自由拖到目标位置。
+      </div>
+
+      <div id="img-container">
+        <div id="canvas-wrap">
+          <img id="sample" src="{{ sample_frame_url }}" alt="sample">
+        </div>
+      </div>
+    </div>
+
+    <!-- 表单 -->
+    <form method="post" class="bg-card-ip rounded-2xl shadow-xl p-6 space-y-5" id="rectForm">
+      <!-- Logo -->
+      <div>
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-1">
+          <h3 class="font-semibold text-tea-dark">标识 / 水印（Logo）</h3>
+          <div class="space-x-2">
+            <button type="button" id="addLogo" class="px-3 py-1 rounded-xl bg-emerald-600 text-white text-sm hover:bg-emerald-700 transition transform hover:scale-105">+ 新增 Logo 框</button>
+            <button type="button" id="delLastLogo" class="px-3 py-1 rounded-xl bg-slate-200 text-sm hover:bg-slate-300 transition">删除最后一个</button>
+          </div>
+        </div>
+        <div id="logoList" class="space-y-2 text-sm"></div>
+        <input type="hidden" name="logos_json" id="logos_json">
+      </div>
+
+      <!-- 蒙版区域 -->
+      <div>
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-1">
+          <h3 class="font-semibold text-tea-dark">手动蒙版模糊区域（Mask）</h3>
+          <div class="space-x-2">
+            <button type="button" id="addMask" class="px-3 py-1 rounded-xl bg-blue-600 text-white text-sm hover:bg-blue-700 transition transform hover:scale-105">+ 新增蒙版区域</button>
+            <button type="button" id="delLastMask" class="px-3 py-1 rounded-xl bg-slate-200 text-sm hover:bg-slate-300 transition">删除最后一个</button>
+          </div>
+        </div>
+        <div id="maskList" class="space-y-2 text-sm"></div>
+        <input type="hidden" name="masks_json" id="masks_json">
+        <p class="text-xs text-slate-500 mt-1">蓝色框区域将被 boxblur 模糊处理，该区域在<b>整个视频时长内保持一致</b>地模糊，用于遮挡敏感文字、电话、地址等。</p>
+      </div>
+
+      <div class="flex flex-wrap items-center gap-4 pt-4 border-t border-slate-200">
+        <label class="flex items-center gap-2 text-sm text-slate-700 cursor-pointer select-none"><input type="checkbox" name="skip_detect" id="skip_detect" class="w-4 h-4 rounded accent-pink-500"> 跳过所有 Logo / 蒙版模糊处理</label>
+        <button id="submitBtn" class="ml-auto btn-tea px-6 py-2 rounded-xl font-semibold text-white shadow-md transition transform hover:scale-[1.02] hover:shadow-lg active:scale-95">
+          {% if state.mode == 'portrait' %}确认并开始人物识别{% else %}确认并编辑全部固定窗口{% endif %} →
+        </button>
+      </div>
+    </form>
+  </main>
+
+  <script>
+    const img = document.getElementById('sample');
+    const wrap = document.getElementById('canvas-wrap');
+    const imgContainer = document.getElementById('img-container');
+
+    // 等比换算：原图坐标 → 当前显示坐标
+    function scale() {
+      const W = img.naturalWidth || {{ width }};
+      const H = img.naturalHeight || {{ height }};
+      const sw = img.clientWidth / W;
+      const sh = img.clientHeight / H;
+      return { W, H, sw, sh };
+    }
+
+    function makeRect(cls, x, y, w, h, label, onChange) {
+      const { sw, sh } = scale();
+      const el = document.createElement('div');
+      el.className = 'rect ' + cls;
+      el.style.left = (x * sw) + 'px';
+      el.style.top  = (y * sh) + 'px';
+      el.style.width = (w * sw) + 'px';
+      el.style.height = (h * sh) + 'px';
+      const lbl = document.createElement('div'); lbl.className='lbl'; lbl.textContent=label; el.appendChild(lbl);
+      wrap.appendChild(el);
+
+      // === 拖动矩形位置 ===
+      let dragging=false, startX=0, startY=0, ox=0, oy=0;
+      el.addEventListener('mousedown', (e)=>{
+        // 如果点到了右下角手柄 (::after 区域)，不触发移动
+        const rect = el.getBoundingClientRect();
+        const inHandle = (e.clientX >= rect.right - 10) && (e.clientY >= rect.bottom - 10);
+        if (inHandle) return;
+        dragging=true; startX=e.clientX; startY=e.clientY;
+        ox=parseFloat(el.style.left); oy=parseFloat(el.style.top);
+        e.preventDefault();
+        e.stopPropagation();
+      });
+      window.addEventListener('mousemove', (e)=>{
+        if(!dragging) return;
+        let nx = ox + (e.clientX-startX);
+        let ny = oy + (e.clientY-startY);
+        nx = Math.max(0, Math.min(wrap.clientWidth - el.offsetWidth, nx));
+        ny = Math.max(0, Math.min(wrap.clientHeight - el.offsetHeight, ny));
+        el.style.left = nx+'px'; el.style.top=ny+'px';
+        onChange(readRect(el));
+      });
+      window.addEventListener('mouseup', ()=> dragging=false);
+
+      // === 右下角手柄调整尺寸 ===
+      let resizing = false, rStartX=0, rStartY=0, rOw=0, rOh=0;
+      window.addEventListener('mousedown', (e)=>{
+        const rect = el.getBoundingClientRect();
+        const inHandle = (e.clientX >= rect.right - 12) && (e.clientY >= rect.bottom - 12)
+                      && (e.clientX <= rect.right + 8) && (e.clientY <= rect.bottom + 8);
+        if (!inHandle) return;
+        if (e.target !== el && e.target !== lbl && !el.contains(e.target)) {
+          // 只有直接点在 el 上的手柄区域才算（这里用位置判断即可）
+        }
+        // 双重校验：必须鼠标在本元素的手柄范围
+        if (e.clientX < rect.right - 14 || e.clientY < rect.bottom - 14) return;
+        resizing = true;
+        rStartX = e.clientX; rStartY = e.clientY;
+        rOw = el.offsetWidth; rOh = el.offsetHeight;
+        e.preventDefault();
+        e.stopPropagation();
+      });
+      window.addEventListener('mousemove', (e)=>{
+        if(!resizing) return;
+        let nw = Math.max(10, rOw + (e.clientX - rStartX));
+        let nh = Math.max(10, rOh + (e.clientY - rStartY));
+        // 限制不超出画布
+        const maxW = wrap.clientWidth - parseFloat(el.style.left);
+        const maxH = wrap.clientHeight - parseFloat(el.style.top);
+        nw = Math.min(nw, maxW);
+        nh = Math.min(nh, maxH);
+        el.style.width = nw + 'px';
+        el.style.height = nh + 'px';
+        onChange(readRect(el));
+      });
+      window.addEventListener('mouseup', ()=> resizing=false);
+
+      return el;
+    }
+    function readRect(el){
+      const { W,H,sw,sh } = scale();
+      return {
+        x: Math.max(0, Math.round(parseFloat(el.style.left)/sw)),
+        y: Math.max(0, Math.round(parseFloat(el.style.top)/sh)),
+        w: Math.max(0, Math.round(el.offsetWidth/sw)),
+        h: Math.max(0, Math.round(el.offsetHeight/sh)),
+      };
+    }
+
+    // ============ Logos ============
+    const initLogos = {{ logos | tojson }} || [];
+    const logoEls = [];
+    function renderLogoList() {
+      const host = document.getElementById('logoList');
+      host.innerHTML = '';
+      logoEls.forEach((_, i)=>{
+        const row = document.createElement('div');
+        row.className='grid grid-cols-2 md:grid-cols-5 gap-2 items-center';
+        const r = readRect(logoEls[i]);
+        row.innerHTML = `
+          <div class="font-semibold text-emerald-700">#${i+1}</div>
+          <div>X<input data-i="${i}" data-k="x" class="logo-inp w-full px-2 py-1 border border-slate-300 rounded-lg" value="${r.x}"></div>
+          <div>Y<input data-i="${i}" data-k="y" class="logo-inp w-full px-2 py-1 border border-slate-300 rounded-lg" value="${r.y}"></div>
+          <div>宽<input data-i="${i}" data-k="w" class="logo-inp w-full px-2 py-1 border border-slate-300 rounded-lg" value="${r.w}"></div>
+          <div>高<input data-i="${i}" data-k="h" class="logo-inp w-full px-2 py-1 border border-slate-300 rounded-lg" value="${r.h}"></div>`;
+        host.appendChild(row);
+      });
+      host.querySelectorAll('.logo-inp').forEach(inp=>{
+        inp.addEventListener('input', e=>{
+          const i=+e.target.dataset.i, k=e.target.dataset.k;
+          const r=readRect(logoEls[i]); r[k]=parseInt(e.target.value)||0;
+          const {sw,sh}=scale();
+          logoEls[i].style.left=(r.x*sw)+'px'; logoEls[i].style.top=(r.y*sh)+'px';
+          logoEls[i].style.width=(r.w*sw)+'px'; logoEls[i].style.height=(r.h*sh)+'px';
+        });
+      });
+    }
+    function addLogo(r) {
+      const el = makeRect('logo', r.x, r.y, r.w, r.h, `Logo ${logoEls.length+1}`, renderLogoList);
+      logoEls.push(el);
+      renderLogoList();
+    }
+    initLogos.forEach(r => addLogo({x:r[0],y:r[1],w:r[2],h:r[3]}));
+    document.getElementById('addLogo').onclick = ()=> {
+      const {W,H} = scale();
+      addLogo({x:Math.round(W*0.05), y:Math.round(H*0.05), w:150, h:80});
+    };
+    document.getElementById('delLastLogo').onclick = ()=> {
+      const el = logoEls.pop();
+      if(el) el.remove();
+      renderLogoList();
+    };
+
+    // ============ Masks（蓝色，只支持模糊蒙版三档强度，带视觉预览效果） ============
+    const initMasks = {{ masks | tojson }} || [];
+    const maskEls = [];  // 每个元素: { el, mode, strength }
+    function readMaskMeta(i){
+      return {
+        mode: "blur",  // 已移除消除/遮挡选项，永远为 blur
+        strength: maskEls[i].strength || "medium",
+      };
+    }
+    function applyMaskPreview(el, strength){
+      const s = strength || "medium";
+      el.setAttribute('data-strength', s);
+    }
+    function updateMaskLabel(i, el){
+      const meta = readMaskMeta(i);
+      const s = meta.strength === "light" ? "轻度" : meta.strength === "strong" ? "重度" : "中度";
+      const lbl = el.querySelector(".lbl");
+      if (lbl) lbl.textContent = `蒙版 ${i+1}·模糊(${s})`;
+    }
+    function renderMaskList() {
+      const host = document.getElementById('maskList');
+      host.innerHTML = '';
+      maskEls.forEach((entry, i)=>{
+        const el = entry.el;
+        const r = readRect(el);
+        const meta = readMaskMeta(i);
+        const row = document.createElement('div');
+        row.className='grid grid-cols-2 md:grid-cols-6 gap-2 items-center';
+        row.innerHTML = `
+          <div class="font-semibold text-blue-700 md:col-span-1">#${i+1}</div>
+          <div class="md:col-span-1">X<input data-i="${i}" data-k="x" class="mask-inp w-full px-2 py-1 border border-slate-300 rounded-lg" value="${r.x}"></div>
+          <div class="md:col-span-1">Y<input data-i="${i}" data-k="y" class="mask-inp w-full px-2 py-1 border border-slate-300 rounded-lg" value="${r.y}"></div>
+          <div class="md:col-span-1">宽<input data-i="${i}" data-k="w" class="mask-inp w-full px-2 py-1 border border-slate-300 rounded-lg" value="${r.w}"></div>
+          <div class="md:col-span-1">高<input data-i="${i}" data-k="h" class="mask-inp w-full px-2 py-1 border border-slate-300 rounded-lg" value="${r.h}"></div>
+          <div class="md:col-span-1">
+            模糊强度
+            <select data-i="${i}" data-k="strength" class="mask-strength w-full px-2 py-1 border border-slate-300 rounded-lg text-sm bg-blue-50">
+              <option value="light"  ${meta.strength==='light'  ? 'selected':''}>轻度模糊</option>
+              <option value="medium" ${meta.strength==='medium' ? 'selected':''}>中度模糊</option>
+              <option value="strong" ${meta.strength==='strong' ? 'selected':''}>重度模糊</option>
+            </select>
+          </div>`;
+        host.appendChild(row);
+      });
+      host.querySelectorAll('.mask-inp').forEach(inp=>{
+        inp.addEventListener('input', e=>{
+          const i=+e.target.dataset.i, k=e.target.dataset.k;
+          const r=readRect(maskEls[i].el); r[k]=parseInt(e.target.value)||0;
+          const {sw,sh}=scale();
+          maskEls[i].el.style.left=(r.x*sw)+'px'; maskEls[i].el.style.top=(r.y*sh)+'px';
+          maskEls[i].el.style.width=(r.w*sw)+'px'; maskEls[i].el.style.height=(r.h*sh)+'px';
+        });
+      });
+      host.querySelectorAll('.mask-strength').forEach(sel=>{
+        sel.addEventListener('change', e=>{
+          const i=+e.target.dataset.i, s=e.target.value;
+          maskEls[i].strength = s;
+          applyMaskPreview(maskEls[i].el, s);
+          updateMaskLabel(i, maskEls[i].el);
+        });
+      });
+    }
+    function addMask(r) {
+      const strength = r.strength || "medium";
+      const el = makeRect('mask', r.x, r.y, r.w, r.h, `蒙版 ${maskEls.length+1}·模糊(中度)`, ()=>{
+        renderMaskList();
+      });
+      applyMaskPreview(el, strength);
+      const entry = { el, mode: "blur", strength: strength };
+      maskEls.push(entry);
+      const idx = maskEls.length-1;
+      updateMaskLabel(idx, el);
+      renderMaskList();
+    }
+    // 兼容后端传的 4-tuple / 6-tuple 格式
+    initMasks.forEach(r => {
+      let opts = { mode: "blur", strength: "medium" };
+      if (Array.isArray(r)) {
+        if (r.length >= 6) opts = {x:r[0],y:r[1],w:r[2],h:r[3],mode:"blur",strength:r[5]||"medium"};
+        else if (r.length === 5) opts = {x:r[0],y:r[1],w:r[2],h:r[3],mode:"blur",strength:"medium"};
+        else opts = {x:r[0],y:r[1],w:r[2],h:r[3]};
+      } else {
+        opts = Object.assign({}, r, { mode: "blur" });
+      }
+      addMask(opts);
+    });
+    document.getElementById('addMask').onclick = ()=> {
+      const {W,H} = scale();
+      addMask({x:Math.round(W*0.05), y:Math.round(H*0.05), w:200, h:120, mode:"blur", strength:"medium"});
+    };
+    document.getElementById('delLastMask').onclick = ()=> {
+      const entry = maskEls.pop();
+      if(entry && entry.el) entry.el.remove();
+      renderMaskList();
+    };
+
+    // ============ 提交 ============
+    document.getElementById('submitBtn').onclick = (e)=>{
+      const logos = logoEls.map(readRect).filter(r=>r.w>0 && r.h>0);
+      const masks = maskEls.map((entry, i) => {
+        const r = readRect(entry.el);
+        if (r.w<=0 || r.h<=0) return null;
+        const meta = readMaskMeta(i);
+        return {
+          x: r.x, y: r.y, w: r.w, h: r.h,
+          mode: meta.mode, strength: meta.strength,
+        };
+      }).filter(Boolean);
+      document.getElementById('logos_json').value = JSON.stringify(logos);
+      document.getElementById('masks_json').value = JSON.stringify(masks);
+      return true;
+    };
+
+    // ============ 重排所有矩形（窗口大小变化时，保持原图坐标不变重新映射） ============
+    function repositionAll() {
+      const s = scale();
+      logoEls.forEach((el,i)=>{
+        const inputs = document.querySelectorAll(`#logoList .logo-inp[data-i="${i}"]`);
+        let x=0,y=0,w=0,h=0;
+        inputs.forEach(inp => { if(inp.dataset.k==='x')x=+inp.value; if(inp.dataset.k==='y')y=+inp.value; if(inp.dataset.k==='w')w=+inp.value; if(inp.dataset.k==='h')h=+inp.value; });
+        el.style.left=(x*s.sw)+'px'; el.style.top =(y*s.sh)+'px';
+        el.style.width=(w*s.sw)+'px'; el.style.height=(h*s.sh)+'px';
+      });
+      maskEls.forEach((entry,i)=>{
+        const el = entry.el;
+        const inputs = document.querySelectorAll(`#maskList .mask-inp[data-i="${i}"]`);
+        let x=0,y=0,w=0,h=0;
+        inputs.forEach(inp => { if(inp.dataset.k==='x')x=+inp.value; if(inp.dataset.k==='y')y=+inp.value; if(inp.dataset.k==='w')w=+inp.value; if(inp.dataset.k==='h')h=+inp.value; });
+        el.style.left=(x*s.sw)+'px'; el.style.top =(y*s.sh)+'px';
+        el.style.width=(w*s.sw)+'px'; el.style.height=(h*s.sh)+'px';
+      });
+    }
+    window.addEventListener('resize', () => requestAnimationFrame(repositionAll));
+    // 图片加载完成后重排一次（确保图片实际尺寸已知）
+    if (img.complete) { repositionAll(); }
+    else { img.onload = () => repositionAll(); }
+
+    // ===== 提交时：全局禁用 + loading 遮罩，防重复点击 =====
+    function showLoading(msg){
+      // ⚠ 关键：表单字段（text/number/hidden/textarea）必须用 readonly 而不是 disabled，
+      //    否则浏览器 submit 时会剔除这些字段，后端会报 422 Field required。
+      document.querySelectorAll('input, button, textarea, select, .dropzone, a').forEach(el=>{
+        if (el.tagName === 'A') { el.style.pointerEvents='none'; el.classList.add('opacity-50'); return; }
+        if (el.classList && el.classList.contains('dropzone')) {
+          el.style.pointerEvents='none'; el.classList.add('opacity-60'); return;
+        }
+        const tag = el.tagName;
+        const type = el.getAttribute && el.getAttribute('type');
+        if (tag === 'BUTTON') {
+          el.setAttribute('disabled','disabled');
+          el.classList.add('opacity-60','cursor-not-allowed');
+        } else if (tag === 'SELECT' || type === 'file' || type === 'checkbox' || type === 'radio') {
+          el.style.pointerEvents='none';
+          try { el.addEventListener('keydown', function _bh(e){ e.preventDefault(); e.stopPropagation(); }, {capture:true}); } catch(_){}
+          try { el.tabIndex = -1; } catch(_){}
+          el.classList.add('opacity-60','cursor-not-allowed');
+        } else {
+          el.setAttribute('readonly','readonly');
+          el.classList.add('opacity-60','cursor-not-allowed');
+        }
+      });
+      const mask = document.getElementById('loadingMask');
+      if (mask) {
+        const m = mask.querySelector('.msg'); if (m && msg) m.textContent = msg;
+        mask.classList.add('active');
+      }
+    }
+    document.querySelectorAll('form').forEach(form=>{
+      form.addEventListener('submit', ()=>showLoading('正在提交，请稍候…'));
+    });
+  </script>
+
+  <div id="loadingMask" class="loading-mask"><div class="spinner"></div><div class="msg">正在提交，请稍候…</div></div>
+</body>
+</html>

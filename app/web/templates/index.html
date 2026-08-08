@@ -1,0 +1,473 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>茶辑</title>
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif; }
+    .hero-grad { background: linear-gradient(135deg, #06b6d4 0%, #22d3ee 25%, #c084fc 60%, #f0abfc 80%, #ec4899 100%); background-attachment: fixed; }
+    .btn-tea { background: linear-gradient(to right, #6B8E5A, #FFB347); }
+    .text-tea { color: #6B8E5A; }
+    .text-tea-dark { color: #5F7A4A; }
+    .text-orange-light { color: #F97316; text-shadow: 0 1px 4px rgba(255,255,255,0.5); }
+    .dropzone.dragover { border-color: #ec4899; background: rgba(236,72,153,0.10); transform: scale(1.01); }
+    /* 顶部导航栏：白色 50% 透明 */
+    .bg-header-ip {
+      background: rgba(255,255,255,.50);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-color: rgba(255,255,255,.4);
+    }
+    /* 卡片/面板：白色 50% 透明（有框的地方） */
+    .bg-card-ip {
+      background: rgba(255,255,255,.50);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(255,255,255,.4);
+    }
+    /* 首页底部功能区：背景透出约 80%，区别于上方白色表单玻璃卡 */
+    .feature-section {
+      position: relative;
+      padding-top: 18px;
+    }
+    .feature-section::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 8%;
+      right: 8%;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,.62), transparent);
+    }
+    .feature-heading {
+      position: relative;
+      overflow: hidden;
+      background: linear-gradient(112deg, rgba(34,211,238,.20), rgba(168,85,247,.18) 52%, rgba(244,114,182,.21));
+      backdrop-filter: blur(14px) saturate(120%);
+      -webkit-backdrop-filter: blur(14px) saturate(120%);
+      border: 1px solid rgba(255,255,255,.52);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.38), 0 8px 24px rgba(67,56,202,.08);
+    }
+    .feature-heading::after {
+      content: "";
+      position: absolute;
+      width: 84px;
+      height: 84px;
+      right: -26px;
+      top: -56px;
+      border-radius: 50%;
+      background: rgba(255,255,255,.18);
+      filter: blur(2px);
+    }
+    .feature-card {
+      position: relative;
+      isolation: isolate;
+      overflow: hidden;
+      min-height: 142px;
+      backdrop-filter: blur(13px) saturate(125%);
+      -webkit-backdrop-filter: blur(13px) saturate(125%);
+      border: 1px solid rgba(255,255,255,.42);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.34), 0 10px 28px rgba(30,41,59,.10);
+      transition: transform .24s ease, border-color .24s ease, box-shadow .24s ease;
+    }
+    .feature-card::before,
+    .feature-card::after {
+      content: "";
+      position: absolute;
+      z-index: -1;
+      border-radius: 999px;
+      pointer-events: none;
+    }
+    .feature-card::before {
+      width: 92px;
+      height: 92px;
+      right: -38px;
+      top: -42px;
+      background: var(--feature-glow);
+      filter: blur(8px);
+    }
+    .feature-card::after {
+      width: 56px;
+      height: 18px;
+      left: -18px;
+      bottom: 10px;
+      border: 1px solid rgba(255,255,255,.30);
+      transform: rotate(-18deg);
+    }
+    .feature-card:hover {
+      transform: translateY(-4px);
+      border-color: rgba(255,255,255,.62);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.44), 0 16px 34px rgba(30,41,59,.15);
+    }
+    .feature-card-cyan {
+      --feature-glow: rgba(103,232,249,.20);
+      background: linear-gradient(145deg, rgba(34,211,238,.20), rgba(14,116,144,.16));
+    }
+    .feature-card-violet {
+      --feature-glow: rgba(216,180,254,.21);
+      background: linear-gradient(145deg, rgba(168,85,247,.20), rgba(79,70,229,.17));
+    }
+    .feature-card-rose {
+      --feature-glow: rgba(251,207,232,.22);
+      background: linear-gradient(145deg, rgba(244,114,182,.20), rgba(251,146,60,.17));
+    }
+    .feature-icon {
+      width: 36px;
+      height: 36px;
+      display: grid;
+      place-items: center;
+      border-radius: 11px 11px 11px 4px;
+      color: rgba(255,255,255,.94);
+      background: rgba(15,23,42,.18);
+      border: 1px solid rgba(255,255,255,.34);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.28), 0 5px 14px rgba(15,23,42,.10);
+    }
+    .feature-icon svg { width: 20px; height: 20px; }
+    @media (max-width: 767px) {
+      .feature-card { min-height: 0; }
+    }
+    /* 所有进度条填充：瓷蓝色 */
+    .fill-porcelain { background: linear-gradient(to right, #8fc2e5, #4f94c6); }
+    .tea-icon {
+      width: 48px; height: 48px;
+      border-radius: 12px;
+      overflow: hidden;
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+      border: 1.5px solid rgba(255,255,255,0.45);
+      background: white;
+      flex-shrink: 0;
+    }
+    .tea-icon img { width: 100%; height: 100%; object-fit: contain; display: block; }
+    /* 提交按钮下方的进度条（首页专用：不覆盖整屏） */
+    .submit-progress {
+      display: none;
+      margin-top: 14px;
+      padding: 12px 14px;
+      background: rgba(15, 23, 42, 0.05);
+      border-radius: 14px;
+      border: 1px solid rgba(148, 163, 184, 0.25);
+    }
+    .submit-progress.active { display: block; }
+    .submit-progress .spinner-mini {
+      width: 16px; height: 16px;
+      border: 2.5px solid rgba(236, 72, 153, 0.25);
+      border-top-color: #ec4899;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      flex-shrink: 0;
+    }
+    .submit-progress .sp-row {
+      display: flex; align-items: center; gap: 10px;
+      font-size: 13px; color: #0f172a; font-weight: 600;
+    }
+    .submit-progress .sp-bar {
+      height: 6px; margin-top: 10px;
+      border-radius: 999px;
+      background: rgba(148, 163, 184, 0.3);
+      overflow: hidden;
+    }
+    .submit-progress .sp-fill {
+      height: 100%;
+      border-radius: 999px;
+      background: linear-gradient(to right, #8fc2e5, #4f94c6);
+      transition: width .35s ease;
+      width: 0%;
+    }
+    .submit-progress.error .sp-fill { background: linear-gradient(to right, #ef4444, #f97316); }
+    .submit-progress.error .sp-row { color: #b91c1c; }
+    /* 禁用表单内控件时的视觉样式（只作用于当前 form，不影响其他页面元素） */
+    form.submitting input, form.submitting select, form.submitting textarea, form.submitting button { opacity: .55 !important; cursor: not-allowed !important; }
+    form.submitting button { pointer-events: none; }
+    form.submitting .dropzone, form.submitting input[type="file"], form.submitting input[type="checkbox"], form.submitting input[type="radio"] { pointer-events: none !important; opacity: .55 !important; }
+    form.submitting input:not([type="file"]):not([type="checkbox"]):not([type="radio"]), form.submitting textarea, form.submitting select { pointer-events: none !important; background: rgba(226,232,240,.6) !important; }
+    /* 全局 loading 遮罩（保留给其他页面使用） */
+    .loading-mask {
+      position: fixed; inset: 0; z-index: 9999;
+      background: rgba(15, 23, 42, 0.55);
+      backdrop-filter: blur(3px);
+      display: none;
+      align-items: center; justify-content: center;
+      flex-direction: column; gap: 14px;
+    }
+    .loading-mask.active { display: flex; }
+    .loading-mask .spinner {
+      width: 56px; height: 56px;
+      border: 5px solid rgba(255,255,255,0.3);
+      border-top-color: #f0abfc; border-right-color: #c084fc;
+      border-radius: 50%;
+      animation: spin 0.9s linear infinite;
+    }
+    .loading-mask .msg {
+      color: white; font-weight: 600; font-size: 15px;
+      text-shadow: 0 1px 4px rgba(0,0,0,0.35);
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body class="min-h-screen text-slate-800 hero-grad">
+  <!-- 导航栏 -->
+  <header class="sticky top-0 z-40 bg-header-ip border-b shadow-sm">
+    <div class="max-w-6xl mx-auto px-6 py-3 flex items-center gap-3">
+      <div class="tea-icon shrink-0"><img src="/static/logo.png" alt="茶辑"></div>
+      <span class="font-bold text-lg text-tea">茶辑</span>
+      <nav class="ml-auto flex items-center gap-1.5 text-sm">
+        <a href="/" class="px-3 py-1.5 rounded-lg text-white/85 hover:text-white hover:bg-white/20 transition">首页</a>
+        <a href="/tasks" class="px-3 py-1.5 rounded-lg text-white/85 hover:text-white hover:bg-white/20 transition">任务列表</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="max-w-3xl mx-auto px-6 py-10 space-y-8">
+    <!-- Hero -->
+    <section class="text-center">
+      <h1 class="text-4xl md:text-5xl font-extrabold tracking-tight text-tea-dark drop-shadow-sm">茶辑</h1>
+      <p class="mt-3 text-sm md:text-base text-orange-light font-medium">上传视频，选择人物识别或固定时长分割，逐段审核后本地下载。</p>
+    </section>
+
+    {% if can_accept is defined and not can_accept %}
+    <!-- 系统繁忙提示 -->
+    <div class="bg-red-50/90 backdrop-blur-md border border-red-200 rounded-2xl shadow-lg p-5 text-center">
+      <div class="flex items-center justify-center gap-2 text-red-700">
+        <span class="text-xl">⚠️</span>
+        <span class="font-bold">系统繁忙</span>
+      </div>
+      <p class="text-sm text-red-600 mt-1">当前资源紧张，暂不接受新任务，请稍后再试或前往任务列表查看进度。</p>
+      <a href="/tasks" class="inline-block mt-3 px-4 py-2 rounded-xl bg-red-600 text-white text-sm font-semibold hover:bg-red-700 transition transform hover:scale-105">查看任务列表</a>
+    </div>
+    {% endif %}
+
+    <!-- 单一剪辑表单 -->
+    <form id="clipForm" method="post" action="/upload" enctype="multipart/form-data" class="bg-card-ip rounded-2xl shadow-xl p-6 md:p-8 space-y-6">
+      <div>
+        <label class="block text-sm font-semibold text-slate-700 mb-2">① 上传视频（最长 {{ max_minutes }} 分钟，≤ {{ max_mb }}MB）</label>
+        <div class="dropzone cursor-pointer rounded-xl border-2 border-dashed border-slate-300 bg-slate-50/60 hover:border-pink-400 transition px-6 py-8 text-center" data-target="clipVideo">
+          <svg viewBox="0 0 24 24" fill="none" class="w-10 h-10 mx-auto text-cyan-500 mb-2">
+            <path d="M12 16V4m0 0L8 8m4-4l4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M4 16v2a2 2 0 002 2h12a2 2 0 002-2v-2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <p class="text-sm text-slate-600">拖拽视频到此处，或<span class="text-pink-600 font-semibold">点击选择文件</span></p>
+          <p class="text-xs text-slate-400 mt-1" data-label>支持 mp4 / mov / mkv / avi / flv / webm / m4v</p>
+          <input type="file" name="video" accept="video/*" required class="hidden" id="clipVideo">
+        </div>
+      </div>
+
+      <div class="rounded-xl border border-white/60 bg-indigo-100/40 p-4">
+        <label class="flex items-center gap-3 text-sm font-semibold text-slate-700 cursor-pointer select-none">
+          <input type="checkbox" name="portrait_detection" id="portraitDetection" class="w-5 h-5 rounded accent-pink-500">
+          启用人物识别
+        </label>
+        <p id="portraitHint" class="mt-2 ml-8 text-sm text-slate-600">可随时开启或关闭；开启后将自动识别主要人物并供人工选择。</p>
+      </div>
+
+      <div id="fixedDurationFields" class="rounded-xl border border-white/60 bg-white/30 p-4">
+        <label class="block text-sm font-semibold text-slate-700 mb-2">② 固定时长窗口（分钟）</label>
+        <div class="flex flex-wrap items-center gap-3">
+          <input type="number" id="segmentMinutes" name="segment_minutes" value="{{ default_segment }}" min="1" max="180" required class="w-32 px-3 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-cyan-400 focus:outline-none">
+          <span class="text-sm text-slate-500">分钟（默认 {{ default_segment }}）</span>
+        </div>
+      </div>
+
+      <button type="submit" class="btn-tea w-full py-3 rounded-xl font-semibold text-white shadow-md transition transform hover:scale-[1.01] hover:shadow-lg active:scale-95">开始剪辑 →</button>
+      <div class="submit-progress" data-role="submitProgress">
+        <div class="sp-row"><div class="spinner-mini"></div><div data-msg>正在上传并初始化任务，请稍候…</div></div>
+        <div class="sp-bar"><div class="sp-fill"></div></div>
+      </div>
+    </form>
+
+    <!-- 底部功能说明 -->
+    <section class="feature-section space-y-3">
+      <div class="feature-heading rounded-xl px-4 py-3">
+        <h2 class="relative z-10 text-sm font-bold tracking-wide text-slate-700">功能说明</h2>
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div class="feature-card feature-card-cyan rounded-2xl p-4">
+          <div class="feature-icon mb-3" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M4 7h16M7 4v6m10-6v6M5 11h14v8H5z" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><path d="M9 15l2-2 4 4 2-2 2 2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+          <h3 class="text-sm font-bold text-slate-800 mb-1">横幅裁剪 + 模糊背景</h3>
+          <p class="text-xs text-slate-700 leading-relaxed">自动识别顶部横幅并裁剪，裁剪区域用原画面大半径模糊填充。</p>
+        </div>
+        <div class="feature-card feature-card-violet rounded-2xl p-4">
+          <div class="feature-icon mb-3" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none"><rect x="4" y="4" width="16" height="16" rx="3" stroke="currentColor" stroke-width="1.7"/><path d="M8 8h3v3H8zm5 5h3v3h-3zM8 15h2m5-7h1" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+          <h3 class="text-sm font-bold text-slate-800 mb-1">蒙版模糊</h3>
+          <p class="text-xs text-slate-700 leading-relaxed">标识、水印及手动框选区域，统一用 boxblur 蒙版模糊处理。</p>
+        </div>
+        <div class="feature-card feature-card-rose rounded-2xl p-4">
+          <div class="feature-icon mb-3" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M12 4v11m0 0l-4-4m4 4l4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 17v2h14v-2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+          <h3 class="text-sm font-bold text-slate-800 mb-1">本地下载</h3>
+          <p class="text-xs text-slate-700 leading-relaxed">成品视频生成后即可下载到本地，方便后续使用。</p>
+        </div>
+      </div>
+    </section>
+
+    <footer class="pb-2 text-center text-xs text-slate-400">
+      业务意见请邮：<a href="mailto:chachayuexiang@163.com" class="hover:text-slate-500 transition">chachayuexiang@163.com</a>
+    </footer>
+  </main>
+
+  <script>
+    const clipForm = document.getElementById('clipForm');
+    const portraitDetection = document.getElementById('portraitDetection');
+    const portraitHint = document.getElementById('portraitHint');
+
+    function syncPortraitMode(){
+      portraitHint.textContent = portraitDetection.checked
+        ? '人物识别已开启；固定时长窗口仍可编辑，并用于后续按窗口查看人物结果。'
+        : '可随时开启或关闭；开启后将自动识别主要人物并供人工选择。';
+    }
+    portraitDetection.addEventListener('change', syncPortraitMode);
+    syncPortraitMode();
+
+    // dropzone 通用逻辑
+    document.querySelectorAll('.dropzone').forEach(zone=>{
+      const input = document.getElementById(zone.dataset.target);
+      const label = zone.querySelector('[data-label]');
+      const emptyText = input.multiple ? '支持 jpg / png / webp，可多选' : '支持 mp4 / mov / mkv / avi / flv / webm / m4v';
+      zone.addEventListener('click', ()=>input.click());
+      input.addEventListener('change', ()=>{
+        const files = input.files;
+        if (!files.length) { label.textContent = emptyText; return; }
+        if (input.multiple){
+          label.textContent = '已选择 ' + files.length + ' 张图片：' + Array.from(files).map(f=>f.name).join(', ');
+        } else {
+          const f = files[0];
+          label.textContent = '已选择：' + f.name + ' （' + (f.size/1024/1024).toFixed(1) + ' MB）';
+        }
+      });
+      ['dragenter','dragover'].forEach(ev=>zone.addEventListener(ev, e=>{e.preventDefault(); zone.classList.add('dragover');}));
+      ['dragleave','drop'].forEach(ev=>zone.addEventListener(ev, e=>{e.preventDefault(); zone.classList.remove('dragover');}));
+      zone.addEventListener('drop', e=>{
+        if (e.dataTransfer.files.length){
+          input.files = e.dataTransfer.files;
+          input.dispatchEvent(new Event('change'));
+        }
+      });
+    });
+
+    // ===== 首页提交：XHR 异步 + 只禁用当前表单 + 按钮下方进度条（不遮整屏） =====
+    function setFormBusy(form, busy){
+      if (!form) return;
+      form.classList.toggle('submitting', !!busy);
+      const prog = form.querySelector('[data-role="submitProgress"]');
+      if (prog) prog.classList.toggle('active', !!busy);
+      const btn = form.querySelector('button[type="submit"]');
+      if (btn) {
+        if (busy) { btn.setAttribute('disabled','disabled'); } else { btn.removeAttribute('disabled'); }
+      }
+    }
+    function setInlineProgress(form, percent, msg, isError){
+      const prog = form.querySelector('[data-role="submitProgress"]');
+      if (!prog) return;
+      prog.classList.toggle('error', !!isError);
+      if (typeof percent === 'number') {
+        const p = Math.max(0, Math.min(100, percent));
+        const fill = prog.querySelector('.sp-fill');
+        if (fill) fill.style.width = p + '%';
+      }
+      if (msg != null) {
+        const m = prog.querySelector('[data-msg]');
+        if (m) m.textContent = msg;
+      }
+    }
+    function extractJobId(url){
+      // 从类似 /job/abc123/progress 的 URL 中提取 abc123
+      try {
+        const u = new URL(url, window.location.origin);
+        const m = u.pathname.match(/\/job\/([A-Za-z0-9_-]+)(\/|$)/);
+        return m ? m[1] : null;
+      } catch (_){ return null; }
+    }
+    [clipForm].filter(Boolean).forEach(form=>{
+      form.addEventListener('submit', async (e)=>{
+        e.preventDefault();
+        if (!form.reportValidity()) return;
+        if (form.classList.contains('submitting')) return; // 防重复提交
+
+        setFormBusy(form, true);
+        setInlineProgress(form, 0, '准备上传文件…', false);
+
+        try {
+          const fd = new FormData(form);
+          const respUrl = await new Promise((resolve, reject)=>{
+            const xhr = new XMLHttpRequest();
+            xhr.open('POST', '/upload', true);
+            xhr.withCredentials = true;
+
+            // 真实的上传进度（基于文件 bytes）
+            xhr.upload.addEventListener('progress', (ev)=>{
+              if (ev.lengthComputable && ev.total > 0){
+                // 上传阶段占总进度的 45%
+                const pct = ev.loaded / ev.total * 45;
+                const mb = (ev.loaded / 1024 / 1024).toFixed(1);
+                const totalMb = (ev.total / 1024 / 1024).toFixed(1);
+                setInlineProgress(
+                  form, pct,
+                  `正在上传文件… ${mb} / ${totalMb} MB（${(pct).toFixed(0)}%）`,
+                  false,
+                );
+              } else {
+                setInlineProgress(form, 20, '正在上传文件…', false);
+              }
+            });
+
+            xhr.onload = function(){
+              try {
+                // /upload 返回 303 → 浏览器自动 follow 后 xhr.responseURL 是 /job/{id}/progress
+                if (xhr.status >= 200 && xhr.status < 400 && xhr.responseURL){
+                  setInlineProgress(form, 100, '任务已创建，正在跳转进度页…', false);
+                  resolve(xhr.responseURL);
+                } else if (xhr.status >= 400){
+                  let msg = '上传失败，请重试（HTTP ' + xhr.status + '）';
+                  try {
+                    const txt = (xhr.responseText || '').replace(/<[^>]+>/g,'').trim();
+                    if (txt && txt.length < 200) msg = txt;
+                  } catch(_){}
+                  reject(new Error(msg));
+                } else {
+                  reject(new Error('服务器无响应，请稍后重试。'));
+                }
+              } catch(err){ reject(err); }
+            };
+            xhr.onerror = ()=> reject(new Error('网络异常，上传失败，请检查网络。'));
+            xhr.onabort = ()=> reject(new Error('上传已取消。'));
+            xhr.send(fd);
+          });
+
+          // 保留 ~350ms 让用户看到 100% 再跳
+          const createdJobId = extractJobId(respUrl);
+          const submittedMinutes = Number(fd.get('segment_minutes'));
+          if (createdJobId && Number.isFinite(submittedMinutes) && submittedMinutes > 0) {
+            sessionStorage.setItem(`segmentMinutes:${createdJobId}`, String(submittedMinutes));
+          }
+          setTimeout(()=>{
+            window.location.assign(respUrl);
+          }, 350);
+
+        } catch (err) {
+          console.error('[submit]', err);
+          setInlineProgress(
+            form, 100,
+            '提交失败：' + (err && err.message ? err.message : String(err)),
+            true,
+          );
+          // 失败后恢复表单可编辑，让用户重试
+          setTimeout(()=>{ setFormBusy(form, false); }, 1800);
+        }
+      });
+    });
+  </script>
+
+  <!-- 全局 Loading 遮罩 -->
+  <div id="loadingMask" class="loading-mask">
+    <div class="spinner"></div>
+    <div class="msg">处理中，请稍候…</div>
+  </div>
+</body>
+</html>

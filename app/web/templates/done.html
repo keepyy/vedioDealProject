@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>完成 · {{ job_id }}</title>
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif; }
+    .hero-grad { background: linear-gradient(135deg, #06b6d4 0%, #22d3ee 25%, #c084fc 60%, #f0abfc 80%, #ec4899 100%); background-attachment: fixed; }
+    .btn-tea { background: linear-gradient(to right, #6B8E5A, #FFB347); }
+    .text-tea { color: #6B8E5A; }
+    .text-tea-dark { color: #5F7A4A; }
+    .text-orange-light { color: #F97316; text-shadow: 0 1px 4px rgba(255,255,255,0.5); }
+    /* 顶部导航栏：白色 50% 透明 */
+    .bg-header-ip {
+      background: rgba(255,255,255,.50);
+      backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+      border-color: rgba(255,255,255,.4);
+    }
+    /* 卡片/面板：白色 50% 透明 */
+    .bg-card-ip {
+      background: rgba(255,255,255,.50);
+      backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(255,255,255,.4);
+    }
+    .tea-icon {
+      width: 48px; height: 48px;
+      border-radius: 12px;
+      overflow: hidden;
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+      border: 1.5px solid rgba(255,255,255,0.45);
+      background: white;
+      flex-shrink: 0;
+    }
+    .tea-icon img { width: 100%; height: 100%; object-fit: contain; display: block; }
+    /* 全局 loading 遮罩：点击提交/确认按钮后显示 */
+    .loading-mask {
+      position: fixed; inset: 0; z-index: 9999;
+      background: rgba(15, 23, 42, 0.55);
+      backdrop-filter: blur(3px);
+      display: none;
+      align-items: center; justify-content: center;
+      flex-direction: column; gap: 14px;
+    }
+    .loading-mask.active { display: flex; }
+    .loading-mask .spinner {
+      width: 56px; height: 56px;
+      border: 5px solid rgba(255,255,255,0.3);
+      border-top-color: #f0abfc; border-right-color: #c084fc;
+      border-radius: 50%;
+      animation: spin 0.9s linear infinite;
+    }
+    .loading-mask .msg {
+      color: white; font-weight: 600; font-size: 15px;
+      text-shadow: 0 1px 4px rgba(0,0,0,0.35);
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body class="min-h-screen text-slate-800 hero-grad">
+  <!-- 导航栏 -->
+  <header class="sticky top-0 z-40 bg-header-ip border-b shadow-sm">
+    <div class="max-w-5xl mx-auto px-6 py-3 flex items-center gap-3">
+      <div class="tea-icon shrink-0"><img src="/static/logo.png" alt="茶辑"></div>
+      <div class="flex flex-col leading-tight">
+        <span class="font-bold text-lg text-tea">茶辑</span>
+        <span class="text-xs text-slate-500">任务 ID：<b class="text-slate-700">{{ job_id }}</b></span>
+      </div>
+      <nav class="ml-auto flex items-center gap-1.5 text-sm">
+        <a href="/" class="px-3 py-1.5 rounded-lg text-white/85 hover:text-white hover:bg-white/20 transition">首页</a>
+        <a href="/tasks" class="px-3 py-1.5 rounded-lg text-white/85 hover:text-white hover:bg-white/20 transition">任务列表</a>
+        <span class="hidden md:inline-flex items-center gap-1.5 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-3 py-1 ml-1">
+          <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> 任务完成
+        </span>
+      </nav>
+    </div>
+  </header>
+
+  <main class="max-w-5xl mx-auto px-6 py-10 space-y-6">
+    <!-- 完成横幅 -->
+    <section class="text-center">
+      <div class="inline-flex items-center justify-center w-12 h-12 rounded-full bg-white/20 backdrop-blur-md border border-white/40 mb-3">
+        <svg viewBox="0 0 24 24" fill="none" class="w-7 h-7 text-white"><path d="M5 13l4 4L19 7" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+      <h1 class="text-3xl md:text-4xl font-extrabold tracking-tight text-tea-dark drop-shadow-sm">处理完成</h1>
+      <p class="mt-2 text-sm text-orange-light">任务 ID：{{ job_id }}</p>
+    </section>
+
+    <!-- 成品列表 -->
+    <div class="bg-card-ip rounded-2xl shadow-xl p-6">
+      <h2 class="font-bold text-lg mb-4 text-tea-dark">🎞️ 成品列表（共 {{ output_urls|length }} 段）</h2>
+      <div class="space-y-4">
+        {% for name, url in output_urls %}
+        <div class="border border-slate-200 rounded-xl overflow-hidden bg-white/70">
+          <div class="flex items-center justify-between gap-2 px-4 py-2 bg-white/80 text-sm">
+            <b class="text-slate-700 truncate">{{ name }}</b>
+            <a href="{{ url }}" download class="shrink-0 btn-tea px-3 py-1 rounded-lg text-white text-xs font-semibold hover:shadow-md transition transform hover:scale-105">⬇️ 下载到本地</a>
+          </div>
+          <div class="w-full max-w-3xl mx-auto aspect-[4/3] bg-black">
+            <video src="{{ url }}" controls playsinline class="w-full h-full object-contain"></video>
+          </div>
+        </div>
+        {% endfor %}
+        {% if output_urls|length == 0 %}
+        <div class="text-slate-500 italic text-sm">（没有生成任何片段，请检查参数或日志）</div>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="text-center">
+      <a href="/" class="inline-block btn-tea px-6 py-3 rounded-xl font-semibold text-white shadow-md transition transform hover:scale-[1.02] hover:shadow-lg active:scale-95">← 返回上传页面，处理新视频</a>
+    </div>
+  </main>
+
+  <script>
+    function showLoading(msg){
+      // ⚠ 关键：表单字段（text/number/hidden/textarea）必须用 readonly 而不是 disabled，
+      //    否则浏览器 submit 时会剔除这些字段，后端会报 422 Field required。
+      document.querySelectorAll('input, button, textarea, select, a').forEach(el=>{
+        if (el.tagName === 'A') { el.style.pointerEvents='none'; el.classList.add('opacity-50'); return; }
+        const tag = el.tagName;
+        const type = el.getAttribute && el.getAttribute('type');
+        if (tag === 'BUTTON') {
+          el.setAttribute('disabled','disabled');
+          el.classList.add('opacity-60','cursor-not-allowed');
+        } else if (tag === 'SELECT' || type === 'file' || type === 'checkbox' || type === 'radio') {
+          el.style.pointerEvents='none';
+          try { el.addEventListener('keydown', function _bh(e){ e.preventDefault(); e.stopPropagation(); }, {capture:true}); } catch(_){}
+          try { el.tabIndex = -1; } catch(_){}
+          el.classList.add('opacity-60','cursor-not-allowed');
+        } else {
+          el.setAttribute('readonly','readonly');
+          el.classList.add('opacity-60','cursor-not-allowed');
+        }
+      });
+      const mask = document.getElementById('loadingMask');
+      if (mask) {
+        const m = mask.querySelector('.msg'); if (m && msg) m.textContent = msg;
+        mask.classList.add('active');
+      }
+    }
+    document.querySelectorAll('form').forEach(form=>{
+      form.addEventListener('submit', (e)=>{
+        const btn = form.querySelector('button[type="submit"]');
+        showLoading(btn ? (btn.textContent.trim()+'，请稍候…') : '处理中，请稍候…');
+      });
+    });
+    // 非 form 内的独立跳转按钮（确认/下载/生成 等）也绑定
+    document.querySelectorAll('button').forEach(btn=>{
+      const txt = (btn.textContent || '').trim();
+      if (!btn.closest('form') && /确认|开始|生成|下载|删除|提交|下一步/.test(txt)) {
+        btn.addEventListener('click', ()=>showLoading(txt + '，请稍候…'));
+      }
+    });
+  </script>
+  <div id="loadingMask" class="loading-mask"><div class="spinner"></div><div class="msg">处理中，请稍候…</div></div>
+</body>
+</html>

@@ -1,0 +1,441 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>片段审核 · {{ job_id }} #{{ seg_idx+1 }}/{{ seg_total }}</title>
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif; }
+    .hero-grad { background: linear-gradient(135deg, #06b6d4 0%, #22d3ee 25%, #c084fc 60%, #f0abfc 80%, #ec4899 100%); background-attachment: fixed; }
+    .btn-tea { background: linear-gradient(to right, #6B8E5A, #FFB347); }
+    .text-tea { color: #6B8E5A; }
+    .text-tea-dark { color: #5F7A4A; }
+    .text-orange-light { color: #F97316; text-shadow: 0 1px 4px rgba(255,255,255,0.5); }
+    /* 顶部导航栏：白色 50% 透明 */
+    .bg-header-ip {
+      background: rgba(255,255,255,.50);
+      backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+      border-color: rgba(255,255,255,.4);
+    }
+    /* 卡片/面板：白色 50% 透明 */
+    .bg-card-ip {
+      background: rgba(255,255,255,.50);
+      backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(255,255,255,.4);
+    }
+    .tea-icon {
+      width: 48px; height: 48px;
+      border-radius: 12px;
+      overflow: hidden;
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+      border: 1.5px solid rgba(255,255,255,0.45);
+      background: white;
+      flex-shrink: 0;
+    }
+    .tea-icon img { width: 100%; height: 100%; object-fit: contain; display: block; }
+    /* 全局 loading 遮罩：点击提交/确认按钮后显示 */
+    .loading-mask {
+      position: fixed; inset: 0; z-index: 9999;
+      background: rgba(15, 23, 42, 0.55);
+      backdrop-filter: blur(3px);
+      display: none;
+      align-items: center; justify-content: center;
+      flex-direction: column; gap: 14px;
+    }
+    .loading-mask.active { display: flex; }
+    .loading-mask .spinner {
+      width: 56px; height: 56px;
+      border: 5px solid rgba(255,255,255,0.3);
+      border-top-color: #f0abfc; border-right-color: #c084fc;
+      border-radius: 50%;
+      animation: spin 0.9s linear infinite;
+    }
+    .loading-mask .msg {
+      color: white; font-weight: 600; font-size: 15px;
+      text-shadow: 0 1px 4px rgba(0,0,0,0.35);
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    /* 时间轴 */
+    #timeline { position: relative; height: 56px; background: linear-gradient(to right, rgba(148,163,184,0.35), rgba(203,213,225,0.45)); border-radius: 12px; cursor: crosshair; overflow: hidden; user-select: none; touch-action: none; }
+    #timeline .tick { position:absolute; top:0; bottom:0; width:1px; background:rgba(255,255,255,0.5); }
+    .sub-bar { position:absolute; top:4px; bottom:4px; border-radius:8px; background:linear-gradient(to right, #06b6d4, #ec4899); box-shadow:0 4px 10px -2px rgba(236,72,153,0.45); display:flex; align-items:center; justify-content:center; color:white; font-size:11px; font-weight:600; padding:0 6px; overflow:hidden; pointer-events:none; }
+    #pendingMarker { position:absolute; top:0; bottom:0; width:2px; background:#111827; box-shadow:0 0 0 2px rgba(255,255,255,0.7); }
+    #pendingMarker::after { content:''; position:absolute; top:-5px; left:-4px; width:10px; height:10px; background:#111827; border-radius:50%; }
+    #playhead { position:absolute; top:-4px; bottom:-4px; width:2px; background:#facc15; box-shadow:0 0 6px rgba(250,204,21,0.9); pointer-events:none; }
+    /* 子片段播放态高亮 */
+    .sub-row.playing { outline: 2px solid #06b6d4; outline-offset: 1px; background: linear-gradient(90deg, rgba(6,182,212,0.08), rgba(236,72,153,0.08)) !important; }
+  </style>
+</head>
+<body class="min-h-screen text-slate-800 hero-grad">
+  <!-- 导航栏 -->
+  <header class="sticky top-0 z-40 bg-header-ip border-b shadow-sm">
+    <div class="max-w-5xl mx-auto px-6 py-3 flex items-center gap-3">
+      <div class="tea-icon shrink-0"><img src="/static/logo.png" alt="茶辑"></div>
+      <div class="flex flex-col leading-tight">
+        <span class="font-bold text-lg text-tea">茶辑</span>
+        <span class="text-xs text-slate-500">任务 ID：<b class="text-slate-700">{{ job_id }}</b> · 片段进度 <b class="text-pink-600">{{ seg_idx+1 }}/{{ seg_total }}</b></span>
+      </div>
+      <nav class="ml-auto flex items-center gap-1.5 text-sm">
+        <a href="/" class="px-3 py-1.5 rounded-lg text-white/85 hover:text-white hover:bg-white/20 transition">首页</a>
+        <a href="/tasks" class="px-3 py-1.5 rounded-lg text-white/85 hover:text-white hover:bg-white/20 transition">任务列表</a>
+        <span class="hidden md:inline-flex items-center gap-1.5 text-xs text-cyan-700 bg-cyan-50 border border-cyan-200 rounded-full px-3 py-1 ml-1">
+          <span class="w-1.5 h-1.5 rounded-full bg-cyan-500 animate-pulse"></span> 子片段选取
+        </span>
+      </nav>
+    </div>
+  </header>
+
+  <main class="max-w-5xl mx-auto px-6 py-10 space-y-6">
+    <!-- 预览 -->
+    <div class="bg-card-ip rounded-2xl shadow-xl p-6">
+      <div class="flex flex-wrap items-baseline justify-between gap-2 mb-2">
+        <h2 class="text-xl font-bold text-tea-dark">第 {{ seg_idx+1 }}/{{ seg_total }} 段</h2>
+        <span class="text-sm text-slate-500">时间范围 <b class="text-slate-700">{{ '%0.1f'|format(seg.start_sec) }}s – {{ '%0.1f'|format(seg.end_sec) }}s</b> （共 {{ '%0.1f'|format(seg.end_sec - seg.start_sec) }}s）</span>
+      </div>
+      <p class="text-slate-600 text-sm mb-4 leading-relaxed">
+        上方播放器播放当前固定时段片段。在下方时间轴上点击两次标记「开始点」与「结束点」选择需要保留的子片段，可添加多个<b class="text-pink-600">不连续</b>子片段；点击时间轴时上方视频会跳转到对应画面。在已选子片段列表中点击「▶ 播放此段」可预览该子片段（播放到终点自动暂停）。默认选中整段。
+      </p>
+      <video id="v" src="{{ preview_url }}" controls class="w-full rounded-xl bg-black" preload="auto"></video>
+    </div>
+
+    <!-- 时间轴 + 控制 -->
+    <form method="post" class="bg-card-ip rounded-2xl shadow-xl p-6 space-y-5" id="form">
+      <input type="hidden" name="subsegments_json" id="subsegments_json">
+      <input type="hidden" name="action" id="actionField" value="confirm">
+
+      <!-- 时间轴 -->
+      <div>
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+          <h3 class="font-semibold text-tea-dark">子片段时间轴</h3>
+          <span id="hint" class="text-xs text-slate-500">点击时间轴设置「开始点」</span>
+        </div>
+        <div id="timeline">
+          <div id="playhead"></div>
+        </div>
+        <div class="flex justify-between text-xs text-slate-500 mt-1">
+          <span>{{ '%0.1f'|format(seg.start_sec) }}s</span>
+          <span>{{ '%0.1f'|format(seg.end_sec) }}s</span>
+        </div>
+
+        <div class="flex flex-wrap gap-2 mt-3">
+          <button type="button" id="resetBtn" class="px-3 py-1.5 rounded-xl bg-slate-100 text-slate-700 text-sm hover:bg-slate-200 transition">↺ 重置为整段</button>
+          <button type="button" id="clearBtn" class="px-3 py-1.5 rounded-xl bg-slate-100 text-slate-700 text-sm hover:bg-slate-200 transition">✕ 清除全部</button>
+          <button type="button" id="cancelPendingBtn" class="px-3 py-1.5 rounded-xl bg-amber-50 text-amber-700 text-sm hover:bg-amber-100 transition hidden">取消待定开始点</button>
+        </div>
+      </div>
+
+      <!-- 子片段列表 -->
+      <div>
+        <div class="flex items-center justify-between mb-2">
+          <h3 class="font-semibold text-tea-dark">已选子片段 <span id="countBadge" class="text-xs font-normal text-slate-500"></span></h3>
+          <span id="totalDur" class="text-xs text-slate-500"></span>
+        </div>
+        <div id="subList" class="space-y-2"></div>
+        <div id="emptyHint" class="text-sm text-slate-400 italic hidden">还没有子片段，点击时间轴添加；或直接「跳过此片段」。</div>
+      </div>
+
+      <!-- 操作按钮 -->
+      <div class="flex flex-wrap items-center gap-3 pt-4 border-t border-slate-200">
+        <button type="button" id="skipBtn"
+          class="px-4 py-2 rounded-xl bg-slate-100 text-slate-600 font-semibold hover:bg-slate-200 transition">
+          ⏭️ 跳过此片段
+        </button>
+        <button type="submit" id="confirmBtn"
+          class="ml-auto btn-tea px-6 py-2 rounded-xl font-semibold text-white shadow-md transition transform hover:scale-[1.02] hover:shadow-lg active:scale-95">
+          {{ '确认并进入下一段 →' if seg_idx+1 < seg_total else '确认并生成全部 →' }}
+        </button>
+      </div>
+    </form>
+  </main>
+
+  <script>
+    const segStart = Number({{ seg.start_sec | tojson }});
+    const segEnd   = Number({{ seg.end_sec | tojson }});
+    const segDur   = segEnd - segStart;
+    const backendSubsegments = {{ (seg.subsegments or []) | tojson }};
+
+    const v = document.getElementById('v');
+    const timeline = document.getElementById('timeline');
+    const playhead = document.getElementById('playhead');
+    const hint = document.getElementById('hint');
+    const subList = document.getElementById('subList');
+    const emptyHint = document.getElementById('emptyHint');
+    const countBadge = document.getElementById('countBadge');
+    const totalDur = document.getElementById('totalDur');
+    const subsegmentsJson = document.getElementById('subsegments_json');
+    const actionField = document.getElementById('actionField');
+    const form = document.getElementById('form');
+    const cancelPendingBtn = document.getElementById('cancelPendingBtn');
+
+    function finiteNumber(value){
+      if (value === null || value === undefined || (typeof value === 'string' && value.trim() === '')) return null;
+      const number = Number(value);
+      return Number.isFinite(number) ? number : null;
+    }
+    function validSubsegment(segment){
+      const start = finiteNumber(segment && segment.start_sec);
+      const end = finiteNumber(segment && segment.end_sec);
+      return start !== null && end !== null && start >= segStart && end <= segEnd && start < end;
+    }
+    function serializeSubsegments(){
+      if (!subsegments.every(validSubsegment)) return null;
+      return JSON.stringify(subsegments.map(s => ({ start_sec: +Number(s.start_sec).toFixed(3), end_sec: +Number(s.end_sec).toFixed(3) })));
+    }
+
+    const validBackendSubsegments = Array.isArray(backendSubsegments)
+      ? backendSubsegments.filter(validSubsegment).map(s => ({ start_sec: Number(s.start_sec), end_sec: Number(s.end_sec) }))
+      : [];
+    let subsegments = validBackendSubsegments.length
+      ? validBackendSubsegments
+      : [{ start_sec: segStart, end_sec: segEnd }];
+    let pendingStart = null;   // null | number(绝对时间)
+    let playingSubIdx = -1;    // 当前正在预览播放的子片段索引（-1 表示无）
+
+    function fmt(t){ return Number(t).toFixed(1) + 's'; }
+
+    // 播放指定子片段：从起点开始播放，到达终点自动暂停
+    function playSubsegment(i){
+      const s = subsegments[i];
+      if (!s) return;
+      // 先清除之前所有高亮
+      document.querySelectorAll('.sub-row').forEach(r => r.classList.remove('playing'));
+      playingSubIdx = i;
+      try {
+        v.currentTime = Math.max(0, s.start_sec - segStart);
+        const p = v.play();
+        if (p && typeof p.catch === 'function') p.catch(()=>{});
+      } catch(_) {}
+      // 高亮当前行
+      setTimeout(()=>{
+        const row = subList.querySelector(`.sub-row[data-idx="${i}"]`);
+        if (row) row.classList.add('playing');
+      }, 0);
+    }
+
+    function timeFromEvent(e){
+      const rect = timeline.getBoundingClientRect();
+      const pointerX = e.clientX !== undefined ? e.clientX : (e.changedTouches && e.changedTouches[0] && e.changedTouches[0].clientX);
+      if (!Number.isFinite(pointerX) || !Number.isFinite(rect.width) || rect.width <= 0 || !Number.isFinite(segDur) || segDur <= 0) return null;
+      const x = Math.max(0, Math.min(rect.width, pointerX - rect.left));
+      return segStart + (x / rect.width) * segDur;
+    }
+
+    function clearBars(){
+      timeline.querySelectorAll('.sub-bar, #pendingMarker').forEach(el => el.remove());
+    }
+
+    function render(){
+      clearBars();
+      // 子片段条
+      subsegments.forEach((s) => {
+        const left  = ((s.start_sec - segStart) / segDur) * 100;
+        const width = Math.max(0.5, ((s.end_sec - s.start_sec) / segDur) * 100);
+        const bar = document.createElement('div');
+        bar.className = 'sub-bar';
+        bar.style.left = left + '%';
+        bar.style.width = width + '%';
+        bar.textContent = fmt(s.start_sec) + '–' + fmt(s.end_sec);
+        timeline.appendChild(bar);
+      });
+      // 待定开始点标记
+      if (pendingStart !== null){
+        const m = document.createElement('div');
+        m.id = 'pendingMarker';
+        m.style.left = (((pendingStart - segStart) / segDur) * 100) + '%';
+        timeline.appendChild(m);
+      }
+      // 列表
+      subList.innerHTML = '';
+      subsegments.forEach((s, i) => {
+        const dur = s.end_sec - s.start_sec;
+        const row = document.createElement('div');
+        row.className = 'sub-row flex items-center gap-2 text-sm bg-white/70 border border-slate-200 rounded-xl px-3 py-2 transition';
+        row.dataset.idx = i;
+        row.innerHTML = `
+          <span class="font-semibold text-tea-dark">#${i+1}</span>
+          <span class="text-slate-700">${fmt(s.start_sec)} — ${fmt(s.end_sec)}</span>
+          <span class="text-xs text-slate-400">(${dur.toFixed(1)}s)</span>
+          <button type="button" data-play="${i}" class="ml-auto px-3 py-1 rounded-lg bg-gradient-to-r from-cyan-500 to-pink-500 text-white text-xs font-semibold hover:shadow-md hover:scale-[1.03] active:scale-95 transition">▶ 播放此段</button>
+          <button type="button" data-seek="${i}" class="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-600 text-xs hover:bg-slate-200 transition">⏯ 跳转</button>
+          <button type="button" data-del="${i}" class="px-2.5 py-1 rounded-lg bg-red-50 text-red-600 text-xs hover:bg-red-100 transition">✕ 删除</button>`;
+        subList.appendChild(row);
+      });
+      subList.querySelectorAll('[data-play]').forEach(b => b.onclick = () => {
+        playSubsegment(+b.dataset.play);
+      });
+      subList.querySelectorAll('[data-seek]').forEach(b => b.onclick = () => {
+        const s = subsegments[+b.dataset.seek];
+        if (s) {
+          try { v.currentTime = Math.max(0, s.start_sec - segStart); v.pause(); } catch(_) {}
+          // 清除播放高亮
+          playingSubIdx = -1;
+          document.querySelectorAll('.sub-row').forEach(r => r.classList.remove('playing'));
+        }
+      });
+      subList.querySelectorAll('[data-del]').forEach(b => b.onclick = () => {
+        subsegments.splice(+b.dataset.del, 1);
+        pendingStart = null;
+        playingSubIdx = -1;
+        updateHint();
+        render();
+      });
+
+      // 统计
+      const total = subsegments.reduce((acc, s) => acc + (s.end_sec - s.start_sec), 0);
+      countBadge.textContent = `（${subsegments.length} 个）`;
+      totalDur.textContent = subsegments.length ? `合计 ${total.toFixed(1)}s` : '';
+      emptyHint.classList.toggle('hidden', subsegments.length > 0);
+      cancelPendingBtn.classList.toggle('hidden', pendingStart === null);
+      subsegmentsJson.value = serializeSubsegments() || '[]';
+    }
+
+    function updateHint(){
+      if (pendingStart === null) hint.innerHTML = '点击时间轴设置「<b class="text-cyan-600">开始点</b>」';
+      else hint.innerHTML = `开始点 <b class="text-slate-700">${fmt(pendingStart)}</b>，再点击设置「<b class="text-pink-600">结束点</b>」`;
+    }
+
+    // 时间轴点击：第一次=开始，第二次=结束（自动交换），同时视频跳转到点击位置
+    function handleTimelineClick(e){
+      const t = timeFromEvent(e);
+      if (t === null || !Number.isFinite(t) || t < segStart || t > segEnd) return;
+      // 视频跳转到点击位置
+      try { v.currentTime = Math.max(0, t - segStart); v.pause(); } catch(_) {}
+      if (pendingStart === null){
+        pendingStart = t;
+      } else {
+        let a = Math.max(segStart, Math.min(pendingStart, t));
+        let b = Math.min(segEnd, Math.max(pendingStart, t));
+        if (!(a < b)) {
+          alert('开始时间必须小于结束时间，请重新选择。');
+          pendingStart = null;
+          updateHint();
+          render();
+          return;
+        }
+        subsegments.push({ start_sec: a, end_sec: b });
+        pendingStart = null;
+      }
+      updateHint();
+      render();
+    }
+    timeline.addEventListener('click', handleTimelineClick);
+    timeline.addEventListener('touchend', e => { e.preventDefault(); handleTimelineClick(e); });
+
+    // 播放头跟随 + 子片段预览自动停在终点
+    v.addEventListener('timeupdate', () => {
+      const pct = (v.currentTime / segDur) * 100;
+      playhead.style.left = Math.max(0, Math.min(100, pct)) + '%';
+      playhead.style.display = (v.currentTime > segDur) ? 'none' : 'block';
+      // 子片段预览模式：到达终点自动暂停
+      if (playingSubIdx >= 0) {
+        const s = subsegments[playingSubIdx];
+        if (s) {
+          const endRelative = s.end_sec - segStart;
+          // 考虑误差（浏览器事件精度），加 0.05s 缓冲
+          if (v.currentTime >= endRelative - 0.02) {
+            try { v.pause(); v.currentTime = endRelative; } catch(_) {}
+            playingSubIdx = -1;
+            document.querySelectorAll('.sub-row').forEach(r => r.classList.remove('playing'));
+          }
+        }
+      }
+    });
+    // 用户手动操作视频（通过原生controls）时清除子片段播放标记
+    v.addEventListener('seeked', () => {
+      // 仅当当前没有子片段播放时，不做额外处理
+    });
+    v.addEventListener('pause', () => {
+      // 如果因到达终点自然暂停（见上方），playingSubIdx 已重置；这里无需动作
+    });
+
+    // 重置 / 清除 / 取消待定
+    document.getElementById('resetBtn').onclick = () => {
+      subsegments = [{ start_sec: segStart, end_sec: segEnd }];
+      pendingStart = null;
+      playingSubIdx = -1;
+      document.querySelectorAll('.sub-row').forEach(r => r.classList.remove('playing'));
+      updateHint();
+      render();
+    };
+    document.getElementById('clearBtn').onclick = () => {
+      subsegments = [];
+      pendingStart = null;
+      playingSubIdx = -1;
+      document.querySelectorAll('.sub-row').forEach(r => r.classList.remove('playing'));
+      updateHint();
+      render();
+    };
+    cancelPendingBtn.onclick = () => { pendingStart = null; updateHint(); render(); };
+
+    // 跳过
+    document.getElementById('skipBtn').onclick = () => {
+      actionField.value = 'skip';
+      subsegmentsJson.value = '[]';
+      form.submit();
+    };
+
+    // 提交前确保数据同步
+    form.addEventListener('submit', e => {
+      if (actionField.value === 'skip') return;
+      if (subsegments.length === 0){
+        e.preventDefault();
+        alert('尚未选择任何子片段。如不需此段，请点击「跳过此片段」。');
+        return;
+      }
+      const serialized = serializeSubsegments();
+      if (serialized === null){
+        e.preventDefault();
+        alert(`子片段必须使用有限数字，且满足 ${segStart} ≤ 开始 < 结束 ≤ ${segEnd}。`);
+        return;
+      }
+      subsegmentsJson.value = serialized;
+    });
+
+    updateHint();
+    render();
+
+    function showLoading(msg){
+      // ⚠ 关键：表单字段（text/number/hidden/textarea）必须用 readonly 而不是 disabled，
+      //    否则浏览器 submit 时会剔除这些字段，后端会报 422 Field required。
+      document.querySelectorAll('input, button, textarea, select, a').forEach(el=>{
+        if (el.tagName === 'A') { el.style.pointerEvents='none'; el.classList.add('opacity-50'); return; }
+        const tag = el.tagName;
+        const type = el.getAttribute && el.getAttribute('type');
+        if (tag === 'BUTTON') {
+          el.setAttribute('disabled','disabled');
+          el.classList.add('opacity-60','cursor-not-allowed');
+        } else if (tag === 'SELECT' || type === 'file' || type === 'checkbox' || type === 'radio') {
+          el.style.pointerEvents='none';
+          try { el.addEventListener('keydown', function _bh(e){ e.preventDefault(); e.stopPropagation(); }, {capture:true}); } catch(_){}
+          try { el.tabIndex = -1; } catch(_){}
+          el.classList.add('opacity-60','cursor-not-allowed');
+        } else {
+          el.setAttribute('readonly','readonly');
+          el.classList.add('opacity-60','cursor-not-allowed');
+        }
+      });
+      const mask = document.getElementById('loadingMask');
+      if (mask) {
+        const m = mask.querySelector('.msg'); if (m && msg) m.textContent = msg;
+        mask.classList.add('active');
+      }
+    }
+    document.querySelectorAll('form').forEach(form=>{
+      form.addEventListener('submit', (e)=>{
+        const btn = form.querySelector('button[type="submit"]');
+        showLoading(btn ? (btn.textContent.trim()+'，请稍候…') : '处理中，请稍候…');
+      });
+    });
+    // 非 form 内的独立跳转按钮（确认/下载/生成 等）也绑定
+    document.querySelectorAll('button').forEach(btn=>{
+      const txt = (btn.textContent || '').trim();
+      if (!btn.closest('form') && /确认|开始|生成|下载|删除|提交|下一步/.test(txt)) {
+        btn.addEventListener('click', ()=>showLoading(txt + '，请稍候…'));
+      }
+    });
+  </script>
+  <div id="loadingMask" class="loading-mask"><div class="spinner"></div><div class="msg">处理中，请稍候…</div></div>
+</body>
+</html>

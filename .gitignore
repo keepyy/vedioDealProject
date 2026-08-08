@@ -1,0 +1,17 @@
+.env
+.idea/
+.dbg/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+storage/
+*.part.mp4
+*.log
+
+.DS_Store
+Thumbs.db

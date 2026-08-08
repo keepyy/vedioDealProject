@@ -1,0 +1,352 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>任务列表 · 茶辑</title>
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif; }
+    .hero-grad { background: linear-gradient(135deg, #06b6d4 0%, #22d3ee 25%, #c084fc 60%, #f0abfc 80%, #ec4899 100%); background-attachment: fixed; }
+    .btn-tea { background: linear-gradient(to right, #6B8E5A, #FFB347); }
+    .text-tea { color: #6B8E5A; }
+    .text-tea-dark { color: #5F7A4A; }
+    .text-orange-light { color: #F97316; text-shadow: 0 1px 4px rgba(255,255,255,0.5); }
+    /* 顶部导航栏：白色 50% 透明 */
+    .bg-header-ip {
+      background: rgba(255,255,255,.50);
+      backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+      border-color: rgba(255,255,255,.4);
+    }
+    /* 卡片/面板：白色 50% 透明 */
+    .bg-card-ip {
+      background: rgba(255,255,255,.50);
+      backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(255,255,255,.4);
+    }
+    /* 进度条填充：瓷蓝色 */
+    .fill-porcelain { background: linear-gradient(to right, #8fc2e5, #4f94c6); }
+    .tea-icon {
+      width: 48px; height: 48px;
+      border-radius: 12px;
+      overflow: hidden;
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+      border: 1.5px solid rgba(255,255,255,0.45);
+      background: white;
+      flex-shrink: 0;
+    }
+    .tea-icon img { width: 100%; height: 100%; object-fit: contain; display: block; }
+    /* 全局 loading 遮罩：点击提交/确认按钮后显示 */
+    .loading-mask {
+      position: fixed; inset: 0; z-index: 9999;
+      background: rgba(15, 23, 42, 0.55);
+      backdrop-filter: blur(3px);
+      display: none;
+      align-items: center; justify-content: center;
+      flex-direction: column; gap: 14px;
+    }
+    .loading-mask.active { display: flex; }
+    .loading-mask .spinner {
+      width: 56px; height: 56px;
+      border: 5px solid rgba(255,255,255,0.3);
+      border-top-color: #f0abfc; border-right-color: #c084fc;
+      border-radius: 50%;
+      animation: spin 0.9s linear infinite;
+    }
+    .loading-mask .msg {
+      color: white; font-weight: 600; font-size: 15px;
+      text-shadow: 0 1px 4px rgba(0,0,0,0.35);
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .res-bar { height: 8px; border-radius: 999px; background: rgba(255,255,255,0.5); overflow: hidden; }
+    .res-fill { height: 100%; border-radius: 999px; transition: width .5s ease; }
+    .tab-btn { transition: all .2s ease; }
+    .tab-btn[aria-selected="true"] { background: linear-gradient(to right, #6B8E5A, #FFB347); color: white; box-shadow: 0 4px 12px -3px rgba(107,142,90,0.5); }
+  </style>
+</head>
+<body class="min-h-screen text-slate-800 hero-grad">
+  <!-- 导航栏 -->
+  <header class="sticky top-0 z-40 bg-header-ip border-b shadow-sm">
+    <div class="max-w-5xl mx-auto px-6 py-3 flex items-center gap-3">
+      <div class="tea-icon shrink-0"><img src="/static/logo.png" alt="茶辑"></div>
+      <span class="font-bold text-lg text-tea">茶辑</span>
+      <nav class="ml-auto flex items-center gap-1.5 text-sm">
+        <a href="/" class="px-3 py-1.5 rounded-lg text-white/85 hover:text-white hover:bg-white/20 transition">首页</a>
+        <a href="/tasks" class="px-3 py-1.5 rounded-lg text-white bg-white/25 font-semibold transition">任务列表</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="max-w-5xl mx-auto px-6 py-10 space-y-6">
+    <!-- 标题 + 新建任务 -->
+    <section class="flex flex-wrap items-center justify-between gap-3">
+      <div>
+        <h1 class="text-3xl md:text-4xl font-extrabold tracking-tight text-tea-dark drop-shadow-sm">任务列表</h1>
+        <p class="mt-1 text-sm text-orange-light font-medium">查看所有处理中与已完成的任务</p>
+      </div>
+      <a href="/" class="btn-tea px-5 py-2.5 rounded-xl font-semibold text-white shadow-md transition transform hover:scale-[1.02] hover:shadow-lg active:scale-95">+ 新建任务</a>
+    </section>
+
+    <!-- 系统资源状态 -->
+    <div class="bg-card-ip rounded-2xl shadow-xl p-5">
+      <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <h2 class="font-bold text-tea-dark flex items-center gap-2">
+          <span>🖥️</span> 系统资源状态
+        </h2>
+        <span id="acceptBadge" class="text-xs font-semibold px-3 py-1 rounded-full border
+          {% if can_accept %}bg-emerald-50 text-emerald-700 border-emerald-200{% else %}bg-red-50 text-red-700 border-red-200{% endif %}">
+          {% if can_accept %}● 可接受新任务{% else %}● 系统繁忙{% endif %}
+        </span>
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <!-- CPU -->
+        <div>
+          <div class="flex justify-between text-xs text-slate-600 mb-1.5">
+            <span class="flex items-center gap-1">⚙️ CPU 使用率</span>
+            <span id="cpuText" class="font-semibold text-slate-700">--</span>
+          </div>
+          <div class="res-bar"><div id="cpuFill" class="res-fill" style="width:0%; background: linear-gradient(to right, #8fc2e5, #4f94c6);"></div></div>
+        </div>
+        <!-- 内存 -->
+        <div>
+          <div class="flex justify-between text-xs text-slate-600 mb-1.5">
+            <span class="flex items-center gap-1">🧠 内存使用率</span>
+            <span id="memText" class="font-semibold text-slate-700">--</span>
+          </div>
+          <div class="res-bar"><div id="memFill" class="res-fill" style="width:0%; background: linear-gradient(to right, #8fc2e5, #4f94c6);"></div></div>
+        </div>
+      </div>
+      <p id="memDetail" class="text-xs text-slate-400 mt-2"></p>
+    </div>
+
+    <!-- 标签页切换 -->
+    <div class="flex gap-2 bg-white/60 backdrop-blur-md rounded-2xl p-1.5 border border-white/60 w-fit">
+      <button id="tabProcessing" class="tab-btn px-5 py-2 rounded-xl text-sm font-semibold text-slate-600" aria-selected="true">
+        处理中 <span id="procCount" class="ml-1 text-xs opacity-80">({{ processing|length }})</span>
+      </button>
+      <button id="tabCompleted" class="tab-btn px-5 py-2 rounded-xl text-sm font-semibold text-slate-600" aria-selected="false">
+        已完成 <span class="ml-1 text-xs opacity-80">({{ completed|length }})</span>
+      </button>
+    </div>
+
+    <!-- 处理中任务 -->
+    <section id="panelProcessing">
+      {% if processing|length == 0 %}
+      <div class="bg-card-ip rounded-2xl shadow-xl p-8 text-center">
+        <div class="text-4xl mb-2">📭</div>
+        <p class="text-slate-600 text-sm">当前没有处理中的任务。</p>
+        <a href="/" class="inline-block mt-4 btn-tea px-5 py-2 rounded-xl text-white text-sm font-semibold hover:shadow-md transition transform hover:scale-105">+ 新建任务</a>
+      </div>
+      {% else %}
+      <div class="space-y-3">
+        {% for job in processing %}
+        <div class="bg-card-ip rounded-2xl shadow-lg p-5">
+          <div class="flex flex-wrap items-start justify-between gap-3">
+            <div class="min-w-0 flex-1">
+              <div class="flex flex-wrap items-center gap-2 mb-1">
+                <span class="font-bold text-tea-dark">任务 {{ job.job_id }}</span>
+                {% set st = job.status | default('processing') %}
+                {% set label_map = {'rendering':'渲染中','processing':'处理中','previewing':'生成预览','reviewing':'待审核','pending':'排队中','failed':'失败'} %}
+                <span class="text-xs px-2 py-0.5 rounded-full border
+                  {% if st == 'reviewing' %}bg-emerald-50 text-emerald-700 border-emerald-200
+                  {% elif st == 'failed' %}bg-red-50 text-red-700 border-red-200
+                  {% elif st == 'pending' %}bg-slate-100 text-slate-600 border-slate-200
+                  {% else %}bg-cyan-50 text-cyan-700 border-cyan-200{% endif %}">
+                  {{ label_map.get(st, st) }}
+                </span>
+                {% if job.mode %}<span class="text-xs text-slate-400">{{ '人像选片' if job.mode == 'portrait' else '剪辑' }}</span>{% endif %}
+              </div>
+              <div class="text-xs text-slate-500">
+                {% if job.segments_total | default(0) > 0 %}
+                  已完成 {{ job.final_outputs_count | default(0) }} / {{ job.segments_total }} 段
+                {% endif %}
+              </div>
+              <!-- 进度条 -->
+              {% set total = job.segments_total | default(0) %}
+              {% set done = job.final_outputs_count | default(0) %}
+              {% set pct = ((done / total * 100) | round) if total > 0 else 0 %}
+              <div class="mt-3">
+                <div class="flex justify-between text-xs text-slate-500 mb-1">
+                  <span>进度</span><span>{{ pct | int }}%</span>
+                </div>
+                <div class="res-bar"><div class="res-fill" style="width:{{ pct }}%; background: linear-gradient(to right, #8fc2e5, #4f94c6);"></div></div>
+              </div>
+              {% if job.render_progress and job.render_progress.message %}
+              <p class="text-xs text-slate-400 mt-1">{{ job.render_progress.message }}</p>
+              {% endif %}
+            </div>
+            <a href="/job/{{ job.job_id }}/progress" class="shrink-0 btn-tea px-4 py-2 rounded-xl text-white text-sm font-semibold shadow-sm transition transform hover:scale-105">
+              查看进度 →
+            </a>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </section>
+
+    <!-- 已完成任务 -->
+    <section id="panelCompleted" class="hidden">
+      {% if completed|length == 0 %}
+      <div class="bg-card-ip rounded-2xl shadow-xl p-8 text-center">
+        <div class="text-4xl mb-2">🗂️</div>
+        <p class="text-slate-600 text-sm">还没有已完成的任务。</p>
+      </div>
+      {% else %}
+      <div class="space-y-3">
+        {% for job in completed %}
+        <div class="bg-card-ip rounded-2xl shadow-lg p-5">
+          <div class="flex flex-wrap items-start justify-between gap-3">
+            <div class="min-w-0 flex-1">
+              <div class="flex flex-wrap items-center gap-2 mb-1">
+                <span class="font-bold text-tea-dark">任务 {{ job.job_id }}</span>
+                <span class="text-xs px-2 py-0.5 rounded-full border bg-emerald-50 text-emerald-700 border-emerald-200">已完成</span>
+                <span class="text-xs text-slate-400">成品 {{ job.final_outputs_count | default(0) }} 段</span>
+              </div>
+              <!-- 下载链接列表（若后端提供 output_urls） -->
+              {% if job.output_urls is defined and job.output_urls is iterable and job.output_urls|length > 0 %}
+              <div class="mt-2 flex flex-wrap gap-2">
+                {% for name, url in job.output_urls %}
+                <a href="{{ url }}" download class="inline-flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg bg-white/80 border border-slate-200 text-slate-700 hover:bg-white hover:border-pink-300 transition">
+                  ⬇️ {{ name }}
+                </a>
+                {% endfor %}
+              </div>
+              {% else %}
+              <p class="text-xs text-slate-400 mt-1">前往结果页查看与下载成品。</p>
+              {% endif %}
+            </div>
+            <a href="/job/{{ job.job_id }}/done" class="shrink-0 btn-tea px-4 py-2 rounded-xl text-white text-sm font-semibold shadow-sm transition transform hover:scale-105">
+              查看结果 →
+            </a>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </section>
+
+    <!-- 底部链接 -->
+    <div class="text-center pt-2">
+      <a href="/" class="inline-block px-4 py-2 rounded-xl bg-white/70 border border-white/60 text-slate-600 text-sm font-semibold hover:bg-white/90 transition">← 返回首页</a>
+    </div>
+  </main>
+
+  <script>
+    // ========== 标签页切换 ==========
+    const tabProc = document.getElementById('tabProcessing');
+    const tabDone = document.getElementById('tabCompleted');
+    const panelProc = document.getElementById('panelProcessing');
+    const panelDone = document.getElementById('panelCompleted');
+
+    function switchTab(which){
+      const isProc = (which === 'proc');
+      tabProc.setAttribute('aria-selected', isProc ? 'true' : 'false');
+      tabDone.setAttribute('aria-selected', isProc ? 'false' : 'true');
+      panelProc.classList.toggle('hidden', !isProc);
+      panelDone.classList.toggle('hidden', isProc);
+    }
+    tabProc.addEventListener('click', () => switchTab('proc'));
+    tabDone.addEventListener('click', () => switchTab('done'));
+
+    // ========== 系统资源轮询 ==========
+    const cpuFill = document.getElementById('cpuFill');
+    const cpuText = document.getElementById('cpuText');
+    const memFill = document.getElementById('memFill');
+    const memText = document.getElementById('memText');
+    const memDetail = document.getElementById('memDetail');
+    const acceptBadge = document.getElementById('acceptBadge');
+
+    function clampPct(n){ return Math.max(0, Math.min(100, n || 0)); }
+
+    function applyResources(d){
+      d = d || {};
+      const cpu = clampPct(typeof d.cpu_percent === 'number' ? d.cpu_percent : (typeof d.cpu === 'number' ? d.cpu : 0));
+      const mem = clampPct(typeof d.memory_percent === 'number' ? d.memory_percent : (typeof d.mem === 'number' ? d.mem : (typeof d.memory === 'number' ? d.memory : 0)));
+
+      cpuFill.style.width = cpu + '%';
+      cpuText.textContent = cpu.toFixed(1) + '%';
+      memFill.style.width = mem + '%';
+      memText.textContent = mem.toFixed(1) + '%';
+
+      // 内存详情
+      const used = d.memory_used_gb || d.mem_used_gb;
+      const total = d.memory_total_gb || d.mem_total_gb;
+      if (typeof used === 'number' && typeof total === 'number'){
+        memDetail.textContent = `已用 ${used.toFixed(1)} GB / 共 ${total.toFixed(1)} GB`;
+      } else {
+        memDetail.textContent = '';
+      }
+
+      // 是否可接受新任务
+      const can = (d.can_accept === true);
+      if (can){
+        acceptBadge.className = 'text-xs font-semibold px-3 py-1 rounded-full border bg-emerald-50 text-emerald-700 border-emerald-200';
+        acceptBadge.textContent = '● 可接受新任务';
+      } else {
+        acceptBadge.className = 'text-xs font-semibold px-3 py-1 rounded-full border bg-red-50 text-red-700 border-red-200';
+        acceptBadge.textContent = '● 系统繁忙';
+      }
+    }
+
+    async function pollResources(){
+      try {
+        const res = await fetch('/api/system/resources', { cache: 'no-store' });
+        if (res.ok){
+          const data = await res.json();
+          applyResources(data.resources || data);
+        }
+      } catch (e){
+        // 忽略网络错误
+      } finally {
+        setTimeout(pollResources, 5000);
+      }
+    }
+
+    // 启动轮询
+    setTimeout(pollResources, 5000);
+
+    function showLoading(msg){
+      // ⚠ 关键：表单字段（text/number/hidden/textarea）必须用 readonly 而不是 disabled，
+      //    否则浏览器 submit 时会剔除这些字段，后端会报 422 Field required。
+      document.querySelectorAll('input, button, textarea, select, a').forEach(el=>{
+        if (el.tagName === 'A') { el.style.pointerEvents='none'; el.classList.add('opacity-50'); return; }
+        const tag = el.tagName;
+        const type = el.getAttribute && el.getAttribute('type');
+        if (tag === 'BUTTON') {
+          el.setAttribute('disabled','disabled');
+          el.classList.add('opacity-60','cursor-not-allowed');
+        } else if (tag === 'SELECT' || type === 'file' || type === 'checkbox' || type === 'radio') {
+          el.style.pointerEvents='none';
+          try { el.addEventListener('keydown', function _bh(e){ e.preventDefault(); e.stopPropagation(); }, {capture:true}); } catch(_){}
+          try { el.tabIndex = -1; } catch(_){}
+          el.classList.add('opacity-60','cursor-not-allowed');
+        } else {
+          el.setAttribute('readonly','readonly');
+          el.classList.add('opacity-60','cursor-not-allowed');
+        }
+      });
+      const mask = document.getElementById('loadingMask');
+      if (mask) {
+        const m = mask.querySelector('.msg'); if (m && msg) m.textContent = msg;
+        mask.classList.add('active');
+      }
+    }
+    document.querySelectorAll('form').forEach(form=>{
+      form.addEventListener('submit', (e)=>{
+        const btn = form.querySelector('button[type="submit"]');
+        showLoading(btn ? (btn.textContent.trim()+'，请稍候…') : '处理中，请稍候…');
+      });
+    });
+    // 非 form 内的独立跳转按钮（确认/下载/生成 等）也绑定
+    document.querySelectorAll('button').forEach(btn=>{
+      const txt = (btn.textContent || '').trim();
+      if (!btn.closest('form') && /确认|开始|生成|下载|删除|提交|下一步/.test(txt)) {
+        btn.addEventListener('click', ()=>showLoading(txt + '，请稍候…'));
+      }
+    });
+  </script>
+  <div id="loadingMask" class="loading-mask"><div class="spinner"></div><div class="msg">处理中，请稍候…</div></div>
+</body>
+</html>

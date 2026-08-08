@@ -1,0 +1,580 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>固定窗口编辑 · {{ job_id }}</title>
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif; }
+    .hero-grad { background: linear-gradient(135deg, #06b6d4 0%, #22d3ee 25%, #c084fc 60%, #f0abfc 80%, #ec4899 100%); background-attachment: fixed; }
+    .glass { background: rgba(255,255,255,.55); border: 1px solid rgba(255,255,255,.45); backdrop-filter: blur(12px); }
+    .btn-tea { background: linear-gradient(to right, #6b8e5a, #ffb347); }
+    .text-tea { color: #5f7a4a; }
+    .timeline { position: relative; height: 52px; overflow: hidden; border-radius: 12px; cursor: crosshair; background: rgba(203,213,225,.68); }
+    .timeline.disabled { cursor: not-allowed; opacity: .5; }
+    .range { position: absolute; top: 7px; bottom: 7px; min-width: 2px; border-radius: 7px; pointer-events: none; background: linear-gradient(to right, #06b6d4, #8b5cf6, #ec4899); }
+    .playhead, .pending { position: absolute; top: 0; bottom: 0; width: 2px; pointer-events: none; z-index: 2; }
+    .playhead { background: #f59e0b; box-shadow: 0 0 5px #f59e0b; }
+    .pending { background: #0f766e; }
+    .invalid { border-color: #ef4444 !important; box-shadow: 0 0 0 2px rgba(239,68,68,.15); }
+    .avatar-choice:has(input:checked) { box-shadow: 0 0 0 3px rgba(6,182,212,.35); border-color: #0891b2; }
+    .loading { position: fixed; inset: 0; z-index: 100; display: none; place-items: center; background: rgba(15,23,42,.58); color: white; }
+    .loading.active { display: grid; }
+    .region-canvas { position: relative; width: 100%; height: 100%; user-select: none; }
+    .region-rect { position: absolute; z-index: 5; border: 2px solid; border-radius: 4px; cursor: move; box-sizing: border-box; }
+    .region-rect::after { content: ''; position: absolute; right: -5px; bottom: -5px; width: 14px; height: 14px; border: 2px solid #334155; border-radius: 3px; background: white; cursor: nwse-resize; }
+    .region-rect.logo { border-color: #10b981; background: rgba(15,23,42,.32); color: white; font-weight: 700; text-shadow: 0 1px 3px black; display: flex; align-items: center; padding: 4px 8px; }
+    .region-rect.mask { border-color: #3b82f6; background: rgba(59,130,246,.16); backdrop-filter: blur(7px); }
+    .region-rect.mask[data-strength="light"] { backdrop-filter: blur(3px); }
+    .region-rect.mask[data-strength="strong"] { backdrop-filter: blur(14px); }
+    .region-label { position: absolute; top: -20px; left: -2px; padding: 1px 6px; border-radius: 4px; color: white; font-size: 11px; white-space: nowrap; }
+    .logo .region-label { background: #059669; }
+    .mask .region-label { background: #2563eb; }
+    .preview-shell { transition: width .2s ease, transform .2s ease, box-shadow .2s ease; }
+    .preview-shell.floating {
+      position: fixed;
+      top: 92px;
+      left: 50%;
+      z-index: 50;
+      width: min(520px, calc(100vw - 32px));
+      padding: 12px;
+      border: 2px solid rgba(6, 182, 212, .85);
+      border-radius: 16px;
+      background: rgba(255, 255, 255, .94);
+      box-shadow: 0 22px 70px rgba(15, 23, 42, .42);
+      height: auto;
+      transform: translateX(-50%);
+      backdrop-filter: blur(12px);
+    }
+    .preview-shell.floating .preview-title { display: flex; color: #334155; margin-bottom: 8px; }
+    @media (max-width: 767px) {
+      .preview-shell.floating { top: 72px; width: calc(100vw - 20px); padding: 8px; }
+    }
+  </style>
+</head>
+<body class="min-h-screen text-slate-800 hero-grad">
+  <header class="sticky top-0 z-40 glass shadow-sm">
+    <div class="max-w-6xl mx-auto px-6 py-3 flex items-center gap-3">
+      <img src="/static/logo.png" alt="茶辑" class="w-12 h-12 rounded-xl bg-white object-contain shadow">
+      <div><div class="font-bold text-lg text-tea">茶辑</div><div class="text-xs text-slate-500">任务 ID：{{ job_id }}</div></div>
+      <nav class="ml-auto text-sm text-white"><a href="/tasks" class="px-3 py-2 rounded-lg hover:bg-white/20">任务列表</a></nav>
+    </div>
+  </header>
+
+  <main class="max-w-6xl mx-auto px-6 py-9 space-y-6">
+    <section class="text-center">
+      <h1 class="text-3xl md:text-4xl font-extrabold text-tea">固定窗口分段编辑</h1>
+      <p class="mt-2 text-sm text-orange-700">全部固定窗口都会保留在流程中，每个窗口可独立选择人物、编辑区间或跳过。</p>
+    </section>
+
+    <section class="glass rounded-2xl shadow-xl p-5 md:p-6">
+      <div class="flex justify-between mb-4"><h2 class="font-bold text-tea">原视频预览</h2><span class="text-xs text-slate-500">页面共用一个播放器</span></div>
+      <div id="previewAnchor" class="w-full max-w-3xl mx-auto aspect-[4/3]">
+        <div id="previewShell" class="preview-shell w-full h-full">
+          <div class="preview-title hidden items-center justify-between text-xs font-semibold">
+            <span>片段播放预览</span><span>随编辑窗口悬浮</span>
+          </div>
+          <div id="regionCanvas" class="region-canvas aspect-[4/3] rounded-xl overflow-hidden bg-black">
+            <video id="videoPlayer" src="{{ video_url }}" controls preload="metadata" playsinline class="absolute inset-0 w-full h-full object-contain"></video>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <form method="post" action="/job/{{ job_id }}/{{ 'confirm-portrait' if mode == 'portrait' else 'confirm-windows' }}" id="portraitForm" class="space-y-6" novalidate>
+      <input type="hidden" name="windows_json" id="windowsJson" value="[]">
+      <input type="hidden" name="logos_json" id="logosJson" value="[]">
+      <input type="hidden" name="masks_json" id="masksJson" value="[]">
+      <section class="glass rounded-2xl shadow-xl p-5 md:p-6">
+        <div class="flex flex-wrap items-start justify-between gap-3">
+          <div><h2 class="font-bold text-tea">文字 Logo 与蒙版区域</h2><p class="text-xs text-slate-500 mt-1">绿色为可定位的文字 Logo，蓝色为手动模糊蒙版；均可直接在上方视频画面拖动调整。</p></div>
+          <div class="flex flex-wrap gap-2">
+            <button type="button" id="addLogo" class="px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-semibold">＋ 添加文字 Logo</button>
+            <button type="button" id="addMask" class="px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-semibold">＋ 新增蒙版区域</button>
+          </div>
+        </div>
+        <div id="regionList" class="mt-4 space-y-2"></div>
+        <div id="emptyRegions" class="mt-3 text-xs text-slate-500 italic">尚未添加处理区域，最终视频将保留原画面。</div>
+      </section>
+      <section class="glass rounded-2xl shadow-xl p-5 md:p-6">
+        <div class="flex flex-wrap items-end justify-between gap-3 mb-5">
+          <div><h2 class="font-bold text-tea">全部固定窗口</h2><p class="text-xs text-slate-500 mt-1">每个时间条点击两次新增区间；橙色播放头与上方播放器同步。</p></div>
+          <div class="text-xs text-slate-600">固定时长 {{ segment_minutes }} 分钟 · 共 <b>{{ analysis_segments|length }}</b> 个窗口</div>
+        </div>
+        <div id="windowList" class="space-y-5"></div>
+      </section>
+
+      <section class="glass rounded-2xl shadow-xl p-5 md:p-6">
+        <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <div><h2 class="font-bold text-tea">将生成的独立视频</h2><p class="text-xs text-slate-500 mt-1">每个有效区间生成一个独立视频，不进行合并。</p></div>
+          <div class="text-sm text-slate-700"><b id="outputCount">0</b> 段 · 合计 <b id="totalDuration">0.0 秒</b></div>
+        </div>
+        <div id="outputList" class="space-y-3"></div>
+        <div id="emptyOutputs" class="text-sm text-slate-500 italic">当前没有要生成的视频片段；可全部跳过并直接完成任务。</div>
+      </section>
+
+      <section class="glass rounded-2xl shadow-xl p-5 flex flex-wrap items-center gap-4">
+        <div id="formError" class="hidden flex-1 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2"></div>
+        <button type="submit" class="ml-auto btn-tea px-6 py-2.5 rounded-xl font-semibold text-white shadow-md">确认剪辑并直接审核生成 →</button>
+      </section>
+    </form>
+  </main>
+
+  <div id="loading" class="loading"><div class="font-semibold">正在提交固定窗口设置…</div></div>
+  <script>
+    const mode = {{ mode | tojson }};
+    const people = {{ detected_people | tojson }};
+    const analysisWindows = {{ analysis_segments | tojson }};
+    const configuredDuration = Number({{ video_duration | tojson }});
+    const sourceWidth = Number({{ video_width | tojson }});
+    const sourceHeight = Number({{ video_height | tojson }});
+    const initialLogos = {{ logos | tojson }};
+    const initialMasks = {{ masks | tojson }};
+    const player = document.getElementById('videoPlayer');
+    const regionCanvas = document.getElementById('regionCanvas');
+    const regions = [];
+    let activeRegion = null;
+    const previewAnchor = document.getElementById('previewAnchor');
+    const previewShell = document.getElementById('previewShell');
+    const windowList = document.getElementById('windowList');
+    const windowsField = document.getElementById('windowsJson');
+    let videoDuration = Number.isFinite(configuredDuration) ? configuredDuration : 0;
+    const states = analysisWindows.map((window, windowIdx) => ({
+      window_idx: windowIdx,
+      start_sec: Number(window.start_sec),
+      end_sec: Number(window.end_sec),
+      enabled: mode === 'manual',
+      person_id: null,
+      subsegments: mode === 'manual' ? [{start_sec: Number(window.start_sec), end_sec: Number(window.end_sec)}] : [],
+      pendingStart: null,
+    }));
+    let playingRange = null;
+
+    function videoBox() {
+      const cw = regionCanvas.clientWidth;
+      const ch = regionCanvas.clientHeight;
+      const ratio = Math.min(cw / sourceWidth, ch / sourceHeight);
+      const width = sourceWidth * ratio;
+      const height = sourceHeight * ratio;
+      return {left: (cw - width) / 2, top: (ch - height) / 2, width, height, ratio};
+    }
+    function positionRegion(region) {
+      const box = videoBox();
+      region.el.style.left = `${box.left + region.x * box.ratio}px`;
+      region.el.style.top = `${box.top + region.y * box.ratio}px`;
+      region.el.style.width = `${region.w * box.ratio}px`;
+      region.el.style.height = `${region.h * box.ratio}px`;
+    }
+    function syncRegionFromElement(region) {
+      const box = videoBox();
+      region.x = Math.max(0, Math.round((parseFloat(region.el.style.left) - box.left) / box.ratio));
+      region.y = Math.max(0, Math.round((parseFloat(region.el.style.top) - box.top) / box.ratio));
+      region.w = Math.max(1, Math.round(region.el.offsetWidth / box.ratio));
+      region.h = Math.max(1, Math.round(region.el.offsetHeight / box.ratio));
+      region.x = Math.min(region.x, sourceWidth - region.w);
+      region.y = Math.min(region.y, sourceHeight - region.h);
+    }
+    function addRegion(type, data = {}) {
+      const region = {
+        type,
+        x: Number(data.x ?? Math.round(sourceWidth * .06)),
+        y: Number(data.y ?? Math.round(sourceHeight * .06)),
+        w: Number(data.w ?? Math.round(sourceWidth * .18)),
+        h: Number(data.h ?? Math.round(sourceHeight * .12)),
+        strength: data.strength || 'medium',
+        text: data.text || '我的 Logo',
+        font_size: Number(data.font_size || 36),
+        color: data.color || '#ffffff',
+      };
+      const el = document.createElement('div');
+      el.className = `region-rect ${type}`;
+      el.dataset.strength = region.strength;
+      el.innerHTML = `<span class="region-label"></span><span class="logo-text"></span>`;
+      region.el = el;
+      regions.push(region);
+      regionCanvas.appendChild(el);
+      positionRegion(region);
+      el.addEventListener('mousedown', event => {
+        const rect = el.getBoundingClientRect();
+        const resize = event.clientX >= rect.right - 16 && event.clientY >= rect.bottom - 16;
+        activeRegion = {region, resize, startX: event.clientX, startY: event.clientY, left: parseFloat(el.style.left), top: parseFloat(el.style.top), width: el.offsetWidth, height: el.offsetHeight};
+        event.preventDefault(); event.stopPropagation();
+      });
+      renderRegions();
+    }
+    window.addEventListener('mousemove', event => {
+      if (!activeRegion) return;
+      const {region, resize, startX, startY} = activeRegion;
+      const box = videoBox();
+      const dx = event.clientX - startX;
+      const dy = event.clientY - startY;
+      if (resize) {
+        region.el.style.width = `${Math.max(12, Math.min(box.left + box.width - parseFloat(region.el.style.left), activeRegion.width + dx))}px`;
+        region.el.style.height = `${Math.max(12, Math.min(box.top + box.height - parseFloat(region.el.style.top), activeRegion.height + dy))}px`;
+      } else {
+        region.el.style.left = `${Math.max(box.left, Math.min(box.left + box.width - region.el.offsetWidth, activeRegion.left + dx))}px`;
+        region.el.style.top = `${Math.max(box.top, Math.min(box.top + box.height - region.el.offsetHeight, activeRegion.top + dy))}px`;
+      }
+      syncRegionFromElement(region);
+    });
+    window.addEventListener('mouseup', () => { if (activeRegion) { syncRegionFromElement(activeRegion.region); activeRegion = null; renderRegions(); } });
+    function renderRegions() {
+      const host = document.getElementById('regionList');
+      host.replaceChildren();
+      regions.forEach((region, index) => {
+        region.el.querySelector('.region-label').textContent = `${region.type === 'logo' ? '文字 Logo' : '蒙版'} ${index + 1}`;
+        region.el.dataset.strength = region.strength;
+        const logoText = region.el.querySelector('.logo-text');
+        logoText.textContent = region.type === 'logo' ? region.text : '';
+        if (region.type === 'logo') { logoText.style.fontSize = `${Math.max(10, region.font_size * videoBox().ratio)}px`; logoText.style.color = region.color; }
+        const row = document.createElement('div');
+        row.className = 'grid grid-cols-2 md:grid-cols-7 gap-2 items-end rounded-xl bg-white/65 border border-white/70 p-3 text-xs';
+        row.innerHTML = `<b class="${region.type === 'logo' ? 'text-emerald-700' : 'text-blue-700'}">${region.type === 'logo' ? '文字 Logo' : '蒙版'} #${index + 1}</b>` +
+          (region.type === 'logo' ? `<label class="md:col-span-2">文字<input data-text type="text" maxlength="80" value="${region.text.replaceAll('&','&amp;').replaceAll('"','&quot;')}" class="w-full mt-1 px-2 py-1 rounded border border-slate-300"></label><label>字号<input data-font-size type="number" min="12" max="160" value="${region.font_size}" class="w-full mt-1 px-2 py-1 rounded border border-slate-300"></label><label>颜色<input data-color type="color" value="${region.color}" class="w-full mt-1 h-8 rounded border border-slate-300"></label>` :
+          ['x','y','w','h'].map(key => `<label>${({x:'X',y:'Y',w:'宽',h:'高'})[key]}<input data-key="${key}" type="number" value="${region[key]}" class="w-full mt-1 px-2 py-1 rounded border border-slate-300"></label>`).join('') + `<label>模糊强度<select data-strength class="w-full mt-1 px-2 py-1 rounded border border-slate-300"><option value="light" ${region.strength === 'light' ? 'selected' : ''}>轻度</option><option value="medium" ${region.strength === 'medium' ? 'selected' : ''}>中度</option><option value="strong" ${region.strength === 'strong' ? 'selected' : ''}>重度</option></select></label>`) +
+          '<button type="button" data-delete class="px-3 py-1.5 rounded-lg bg-red-50 text-red-600">删除</button>';
+        row.querySelectorAll('input[data-key]').forEach(input => input.addEventListener('change', () => {
+          region[input.dataset.key] = Math.max(input.dataset.key === 'w' || input.dataset.key === 'h' ? 1 : 0, Number(input.value) || 0);
+          region.w = Math.min(region.w, sourceWidth - region.x); region.h = Math.min(region.h, sourceHeight - region.y); positionRegion(region); renderRegions();
+        }));
+        const textInput = row.querySelector('[data-text]');
+        if (textInput) textInput.addEventListener('input', () => { region.text = textInput.value; logoText.textContent = region.text; syncRegionsPayload(); });
+        const fontSize = row.querySelector('[data-font-size]');
+        if (fontSize) fontSize.addEventListener('change', () => { region.font_size = Math.max(12, Math.min(160, Number(fontSize.value) || 36)); renderRegions(); });
+        const color = row.querySelector('[data-color]');
+        if (color) color.addEventListener('input', () => { region.color = color.value; logoText.style.color = region.color; syncRegionsPayload(); });
+        const strength = row.querySelector('[data-strength]');
+        if (strength) strength.addEventListener('change', () => { region.strength = strength.value; region.el.dataset.strength = strength.value; syncRegionsPayload(); });
+        row.querySelector('[data-delete]').addEventListener('click', () => { region.el.remove(); regions.splice(index, 1); renderRegions(); });
+        host.appendChild(row);
+      });
+      document.getElementById('emptyRegions').classList.toggle('hidden', regions.length > 0);
+      syncRegionsPayload();
+    }
+    function syncRegionsPayload() {
+      const logos = regions.filter(item => item.type === 'logo' && item.text.trim()).map(({text,x,y,font_size,color}) => ({text:text.trim(),x,y,font_size,color}));
+      const masks = regions.filter(item => item.type === 'mask').map(({x,y,w,h,strength}) => ({x,y,w,h,mode:'blur',strength}));
+      document.getElementById('logosJson').value = JSON.stringify(logos);
+      document.getElementById('masksJson').value = JSON.stringify(masks);
+    }
+    document.getElementById('addLogo').addEventListener('click', () => addRegion('logo'));
+    document.getElementById('addMask').addEventListener('click', () => addRegion('mask'));
+    initialLogos.forEach(item => addRegion('logo', Array.isArray(item) ? {x:item[0],y:item[1],w:item[2],h:item[3]} : item));
+    initialMasks.forEach(item => addRegion('mask', Array.isArray(item) ? {x:item[0],y:item[1],w:item[2],h:item[3],strength:item[5] || 'medium'} : item));
+
+    function finite(value) {
+      if (value === null || value === undefined || (typeof value === 'string' && !value.trim())) return null;
+      const number = Number(value);
+      return Number.isFinite(number) ? number : null;
+    }
+    function formatTime(value) {
+      const seconds = Math.max(0, finite(value) || 0);
+      const hours = Math.floor(seconds / 3600);
+      const minutes = Math.floor(seconds % 3600 / 60);
+      const secs = Math.floor(seconds % 60);
+      return hours
+        ? `${hours}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
+        : `${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+    }
+    function normalize(items, state) {
+      return items.map(item => ({start_sec: finite(item.start_sec), end_sec: finite(item.end_sec)}))
+        .filter(item => item.start_sec !== null && item.end_sec !== null &&
+          item.start_sec >= state.start_sec && item.end_sec <= state.end_sec && item.start_sec < item.end_sec)
+        .sort((a, b) => a.start_sec - b.start_sec || a.end_sec - b.end_sec)
+        .reduce((result, item) => {
+          const last = result[result.length - 1];
+          if (last && item.start_sec <= last.end_sec) last.end_sec = Math.max(last.end_sec, item.end_sec);
+          else result.push({...item});
+          return result;
+        }, []);
+    }
+    function personSegments(personId, state) {
+      const person = people.find(item => String(item.person_id) === personId);
+      if (!person || !Array.isArray(person.segments)) return [];
+      return normalize(person.segments.map(item => ({
+        start_sec: Math.max(state.start_sec, Number(item.start_sec)),
+        end_sec: Math.min(state.end_sec, Number(item.end_sec)),
+      })), state);
+    }
+
+    function createButton(text, className, handler) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = text;
+      button.className = className;
+      button.addEventListener('click', handler);
+      return button;
+    }
+    function renderWindow(state) {
+      const card = document.createElement('article');
+      card.className = 'rounded-2xl border border-white/70 bg-white/65 p-4 md:p-5 shadow';
+      card.dataset.windowIdx = String(state.window_idx);
+      const duration = state.end_sec - state.start_sec;
+      card.innerHTML = `
+        <div class="flex flex-wrap items-center gap-3">
+          <div><h3 class="font-bold text-tea">窗口 #${state.window_idx + 1}</h3>
+            <div class="text-xs text-slate-500 mt-1">${formatTime(state.start_sec)} – ${formatTime(state.end_sec)} · ${duration.toFixed(1)} 秒</div></div>
+          <label class="ml-auto flex items-center gap-2 text-sm font-semibold">
+            <input data-enable type="checkbox" class="w-5 h-5 accent-cyan-600" ${state.enabled ? 'checked' : ''}>
+            <span>${state.enabled ? '启用' : '跳过'}</span>
+          </label>
+        </div>
+        <div data-body class="mt-4 space-y-4 ${state.enabled ? '' : 'opacity-50'}">
+          <div data-person-section class="${mode === 'portrait' ? '' : 'hidden'}"><div class="text-xs font-semibold text-slate-600 mb-2">此窗口人物（可不选）</div><div data-people class="flex flex-wrap gap-3"></div></div>
+          <div>
+            <div class="flex justify-between text-xs text-slate-500 mb-1"><span>${formatTime(state.start_sec)}</span><span>${formatTime(state.end_sec)}</span></div>
+            <div data-timeline class="timeline ${state.enabled ? '' : 'disabled'}"></div>
+            <div class="mt-2 text-xs text-slate-500">点击时间条跳转视频；两次点击组成一个不连续区间。</div>
+          </div>
+          <div class="flex flex-wrap gap-2" data-actions></div>
+          <div data-error class="hidden text-xs text-red-700"></div>
+          <div data-subsegments class="space-y-2"></div>
+        </div>`;
+
+      const enable = card.querySelector('[data-enable]');
+      const peopleBox = card.querySelector('[data-people]');
+      const choices = [{person_id: null, thumbnail_url: '', label: '不选人物'}, ...people.map((person, idx) => ({...person, label: `人物 ${idx + 1}`}))];
+      choices.forEach(choice => {
+        const label = document.createElement('label');
+        label.className = 'avatar-choice cursor-pointer flex items-center gap-2 rounded-xl border border-slate-200 bg-white/70 p-2 text-xs';
+        const id = choice.person_id === null ? '' : String(choice.person_id);
+        label.innerHTML = `<input type="radio" name="person-${state.window_idx}" value="${id}" class="accent-cyan-600" ${state.person_id === (id || null) ? 'checked' : ''}>`;
+        if (choice.thumbnail_url) {
+          const image = document.createElement('img');
+          image.src = choice.thumbnail_url;
+          image.alt = choice.label;
+          image.className = 'w-10 h-10 rounded-lg object-cover bg-slate-200';
+          label.appendChild(image);
+        }
+        const text = document.createElement('span');
+        text.textContent = choice.label;
+        text.className = 'font-semibold';
+        label.appendChild(text);
+        label.querySelector('input').addEventListener('change', () => {
+          state.person_id = id || null;
+          state.subsegments = state.person_id ? personSegments(state.person_id, state) : [];
+          if (state.person_id && state.subsegments.length) state.enabled = true;
+          state.pendingStart = null;
+          stopRangePlayback();
+          renderAll();
+        });
+        peopleBox.appendChild(label);
+      });
+
+      enable.addEventListener('change', () => {
+        state.enabled = enable.checked;
+        if (state.enabled && !state.subsegments.length) {
+          state.subsegments = [{start_sec: state.start_sec, end_sec: state.end_sec}];
+        }
+        state.pendingStart = null;
+        renderAll();
+      });
+      const actions = card.querySelector('[data-actions]');
+      actions.append(
+        createButton('＋ 新增区间', 'px-3 py-1.5 rounded-lg bg-cyan-600 text-white text-xs font-semibold', () => {
+          if (!state.enabled) return;
+          const start = state.subsegments.length ? state.subsegments[state.subsegments.length - 1].end_sec : state.start_sec;
+          const safeStart = start >= state.end_sec ? state.start_sec : start;
+          state.subsegments.push({start_sec: safeStart, end_sec: Math.min(state.end_sec, safeStart + Math.min(60, state.end_sec - safeStart))});
+          renderAll();
+        }),
+        createButton('整段保留', 'px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-700 text-xs font-semibold', () => {
+          state.enabled = true;
+          state.subsegments = [{start_sec: state.start_sec, end_sec: state.end_sec}];
+          state.pendingStart = null;
+          renderAll();
+        }),
+        createButton('清空区间', 'px-3 py-1.5 rounded-lg bg-slate-100 text-slate-600 text-xs', () => {
+          state.subsegments = [];
+          state.pendingStart = null;
+          renderAll();
+        })
+      );
+      const timeline = card.querySelector('[data-timeline]');
+      timeline.addEventListener('click', event => {
+        if (!state.enabled) return;
+        const rect = timeline.getBoundingClientRect();
+        const point = state.start_sec + Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)) * duration;
+        player.currentTime = Math.max(0, Math.min(videoDuration || state.end_sec, point));
+        if (state.pendingStart === null) state.pendingStart = point;
+        else {
+          const start = Math.min(state.pendingStart, point);
+          const end = Math.max(state.pendingStart, point);
+          state.pendingStart = null;
+          if (start < end) state.subsegments = normalize([...state.subsegments, {start_sec: start, end_sec: end}], state);
+        }
+        renderAll();
+      });
+      return card;
+    }
+
+    function updateCard(state, card) {
+      const timeline = card.querySelector('[data-timeline]');
+      state.subsegments.forEach(item => {
+        const range = document.createElement('div');
+        range.className = 'range';
+        range.style.left = `${(item.start_sec - state.start_sec) / (state.end_sec - state.start_sec) * 100}%`;
+        range.style.width = `${(item.end_sec - item.start_sec) / (state.end_sec - state.start_sec) * 100}%`;
+        timeline.appendChild(range);
+      });
+      if (state.pendingStart !== null) {
+        const marker = document.createElement('div');
+        marker.className = 'pending';
+        marker.style.left = `${(state.pendingStart - state.start_sec) / (state.end_sec - state.start_sec) * 100}%`;
+        timeline.appendChild(marker);
+      }
+      const playhead = document.createElement('div');
+      playhead.className = 'playhead';
+      playhead.dataset.playhead = '';
+      timeline.appendChild(playhead);
+
+      const list = card.querySelector('[data-subsegments]');
+      state.subsegments.forEach((item, index) => {
+        const row = document.createElement('div');
+        const isPlaying = playingRange && playingRange.window_idx === state.window_idx && playingRange.subsegment_idx === index;
+        row.className = `flex flex-wrap items-center gap-2 border rounded-xl px-3 py-2 text-sm ${isPlaying ? 'bg-cyan-50 border-cyan-400 ring-2 ring-cyan-200' : 'bg-white/75 border-slate-200'}`;
+        const start = document.createElement('input');
+        start.type = 'number'; start.step = '0.001'; start.value = item.start_sec; start.className = 'w-28 px-2 py-1 rounded border border-slate-300';
+        const end = start.cloneNode(); end.value = item.end_sec;
+        const apply = () => {
+          const next = {start_sec: finite(start.value), end_sec: finite(end.value)};
+          const valid = next.start_sec !== null && next.end_sec !== null && next.start_sec >= state.start_sec && next.end_sec <= state.end_sec && next.start_sec < next.end_sec;
+          start.classList.toggle('invalid', !valid); end.classList.toggle('invalid', !valid);
+          if (valid) { state.subsegments[index] = next; syncPayload(); renderOutputs(); }
+        };
+        start.addEventListener('change', apply); end.addEventListener('change', apply);
+        row.append(document.createTextNode(`#${index + 1}`), start, document.createTextNode('至'), end, document.createTextNode('秒'));
+        row.appendChild(createButton(isPlaying ? '正在播放' : '▶ 播放此段', 'ml-auto px-3 py-1 rounded-lg bg-gradient-to-r from-cyan-500 to-pink-500 text-white text-xs font-semibold', () => {
+          playRange(state, index);
+        }));
+        row.appendChild(createButton('删除', 'px-3 py-1 rounded-lg bg-red-50 text-red-600 text-xs', () => {
+          stopRangePlayback();
+          state.subsegments.splice(index, 1); renderAll();
+        }));
+        list.appendChild(row);
+      });
+      if (!state.subsegments.length) list.innerHTML = '<div class="text-xs text-slate-500 italic">暂无区间，可选择人物、手动新增或整段保留。</div>';
+    }
+
+    function updateFloatingPreview(force = false) {
+      const anchor = previewAnchor.getBoundingClientRect();
+      previewShell.classList.toggle('floating', force || anchor.bottom < 76 || anchor.top > window.innerHeight);
+      requestAnimationFrame(() => regions.forEach(positionRegion));
+    }
+    function stopRangePlayback() {
+      playingRange = null;
+      player.pause();
+      updateFloatingPreview();
+    }
+    async function playRange(state, index) {
+      const item = state.subsegments[index];
+      if (!item) return;
+      playingRange = {
+        window_idx: state.window_idx,
+        subsegment_idx: index,
+        end_sec: item.end_sec,
+      };
+      player.currentTime = item.start_sec;
+      updateFloatingPreview();
+      renderAll();
+      try { await player.play(); } catch (_) {}
+    }
+
+    function payload() {
+      return states.map(state => ({
+        window_idx: state.window_idx,
+        enabled: state.enabled,
+        person_id: state.person_id,
+        subsegments: state.subsegments.map(item => ({
+          start_sec: +Number(item.start_sec).toFixed(3),
+          end_sec: +Number(item.end_sec).toFixed(3),
+        })),
+      }));
+    }
+    function syncPayload() { windowsField.value = JSON.stringify(payload()); }
+    function renderOutputs() {
+      const outputs = states.filter(state => state.enabled && state.subsegments.length);
+      const list = document.getElementById('outputList');
+      list.replaceChildren();
+      let total = 0;
+      let outputCount = 0;
+      outputs.forEach(state => {
+        const seconds = state.subsegments.reduce((sum, item) => sum + item.end_sec - item.start_sec, 0);
+        total += seconds;
+        outputCount += state.subsegments.length;
+        const row = document.createElement('div');
+        row.className = 'rounded-xl border border-white/70 bg-white/70 px-4 py-3';
+        row.innerHTML = `<div class="font-semibold text-tea">窗口 #${state.window_idx + 1} · ${formatTime(state.start_sec)} – ${formatTime(state.end_sec)}</div>
+          <div class="mt-1 text-xs text-slate-600">${state.subsegments.map(item => `${formatTime(item.start_sec)} – ${formatTime(item.end_sec)}`).join('；')}</div>
+          <div class="mt-1 text-xs font-semibold text-cyan-700">将生成 ${state.subsegments.length} 个独立视频 · 合计 ${seconds.toFixed(1)} 秒</div>`;
+        list.appendChild(row);
+      });
+      document.getElementById('emptyOutputs').classList.toggle('hidden', outputs.length > 0);
+      document.getElementById('outputCount').textContent = String(outputCount);
+      document.getElementById('totalDuration').textContent = `${total.toFixed(1)} 秒`;
+    }
+    function renderAll() {
+      windowList.replaceChildren();
+      states.forEach(state => {
+        const element = renderWindow(state);
+        windowList.appendChild(element);
+        updateCard(state, element);
+      });
+      syncPayload();
+      renderOutputs();
+      updatePlayheads();
+    }
+    function updatePlayheads() {
+      const current = finite(player.currentTime);
+      if (current === null) return;
+      states.forEach(state => {
+        const card = windowList.querySelector(`[data-window-idx="${state.window_idx}"]`);
+        const head = card && card.querySelector('[data-playhead]');
+        if (!head) return;
+        const ratio = (current - state.start_sec) / (state.end_sec - state.start_sec);
+        head.style.left = `${Math.max(0, Math.min(1, ratio)) * 100}%`;
+        head.style.display = ratio >= 0 && ratio <= 1 ? 'block' : 'none';
+      });
+    }
+
+    player.addEventListener('loadedmetadata', () => {
+      if (Number.isFinite(player.duration) && player.duration > 0) videoDuration = player.duration;
+      updatePlayheads();
+    });
+    player.addEventListener('timeupdate', () => {
+      updatePlayheads();
+      if (playingRange && player.currentTime >= playingRange.end_sec - 0.02) {
+        player.pause();
+        playingRange = null;
+        updateFloatingPreview();
+        renderAll();
+      }
+    });
+    player.addEventListener('seeked', updatePlayheads);
+    window.addEventListener('scroll', updateFloatingPreview, {passive: true});
+    window.addEventListener('resize', () => {
+      updateFloatingPreview();
+      regions.forEach(positionRegion);
+    });
+    document.getElementById('portraitForm').addEventListener('submit', event => {
+      const invalidInput = document.querySelector('.invalid');
+      const invalidWindow = states.find(state => state.enabled && !state.subsegments.length);
+      if (invalidInput || invalidWindow) {
+        event.preventDefault();
+        const error = document.getElementById('formError');
+        error.textContent = invalidInput
+          ? '存在超出固定窗口范围或起止顺序错误的时间，请修正后提交。'
+          : `窗口 #${invalidWindow.window_idx + 1} 已启用但没有有效区间，请新增区间、整段保留或切换为跳过。`;
+        error.classList.remove('hidden');
+        return;
+      }
+      syncPayload();
+      syncRegionsPayload();
+      document.getElementById('loading').classList.add('active');
+    });
+    renderAll();
+    updateFloatingPreview();
+  </script>
+</body>
+</html>

@@ -4,10 +4,6 @@ uvicorn[standard]==0.34.0
 jinja2==3.1.5
 python-multipart==0.0.20
 
-# Agent 工作流
-langgraph==0.2.60
-langchain-core==0.3.28
-
 # 视频处理 / 计算机视觉
 opencv-python-headless==4.10.0.84
 numpy==2.1.3
@@ -15,9 +11,6 @@ Pillow==11.0.0
 
 # Docker 沙箱
 docker==7.1.0
-
-# 飞书集成
-lark-oapi==1.4.12
 
 # 工具
 pydantic==2.10.4

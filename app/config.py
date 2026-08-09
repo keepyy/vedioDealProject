@@ -51,20 +51,6 @@ class Settings(BaseSettings):
     ost_black_threshold: int = 15
     ost_scene_threshold: float = 30.0
 
-    # 飞书
-    feishu_app_id: str = ""
-    feishu_app_secret: str = ""
-    feishu_receive_open_id: str = ""
-    feishu_enabled: bool = False
-    # 飞书 - 手机号自动解析open_id
-    feishu_receive_mobile: str = ""
-    # 飞书 - 群聊（如果配了群聊ID，发到群里而非个人）
-    feishu_chat_id: str = ""
-    # 飞书 - Bot webhook 验证 token（事件订阅时配置）
-    feishu_verification_token: str = ""
-    # 飞书 - 事件加密 key（可选，事件订阅时配置）
-    feishu_encrypt_key: str = ""
-
     @property
     def storage_path(self) -> Path:
         p = Path(self.storage_dir).resolve()

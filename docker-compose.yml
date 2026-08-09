@@ -36,7 +36,7 @@ services:
     volumes:
       # 持久化存储（上传的视频、生成的片段）
       - ./storage:/app/storage
-      # .env 配置（飞书密钥等）
+      # 应用运行配置
       - ./.env:/app/.env:ro
     environment:
       - NVIDIA_VISIBLE_DEVICES=all

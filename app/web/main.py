@@ -20,7 +20,10 @@ from app.agents.workflow import job_manager
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("web")
 
-app = FastAPI(title="茶辑 · 视频智能处理Agent")
+app = FastAPI(
+    title="茶辑 · Coze 智能视频剪辑应用",
+    description="面向 Coze 编程部署的单页视频剪辑应用，支持人物片段、文字 Logo、蒙版模糊和 4:3 批量成片。",
+)
 
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 TEMPLATES_DIR.mkdir(exist_ok=True)
@@ -40,6 +43,11 @@ async def get_storage_file(subdir: str, file_name: str):
     if str(target).startswith(str(base)) and target.exists() and target.is_file():
         return FileResponse(target)
     raise HTTPException(404, "not found")
+
+
+@app.get("/health")
+async def health():
+    return {"status": "ok", "service": "coze-video-editor"}
 
 
 # ========== 1. 首页 ==========
@@ -481,35 +489,3 @@ def _abs_to_url(abs_path: Optional[str]) -> str:
         file_path = "/".join(parts[1:])
         return f"/storage/{subdir}/{file_path}"
     return ""
-
-
-# ========== 飞书 Bot Webhook ==========
-
-@app.post("/feishu/webhook")
-async def feishu_webhook(request: Request):
-    """飞书事件订阅 webhook 入口。
-
-    接收飞书推送的事件消息（URL验证 + 消息接收）。
-    """
-    try:
-        body = await request.json()
-    except Exception:
-        body = {}
-
-    logger.info("飞书 webhook 收到请求: type=%s",
-                body.get("type") or body.get("header", {}).get("event_type", ""))
-
-    from app.integrations.feishu_bot import handle_webhook
-    result = handle_webhook(body)
-    return JSONResponse(result)
-
-
-@app.get("/feishu/health")
-async def feishu_health():
-    """飞书 Bot 健康检查。"""
-    return JSONResponse({
-        "status": "ok",
-        "feishu_enabled": settings.feishu_enabled,
-        "app_id": settings.feishu_app_id[:10] + "..." if settings.feishu_app_id else "",
-        "has_verification_token": bool(settings.feishu_verification_token),
-    })

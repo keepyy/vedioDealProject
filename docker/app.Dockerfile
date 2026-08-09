@@ -42,5 +42,6 @@ RUN mkdir -p /app/storage/raw /app/storage/segments /app/storage/final /app/stor
 ENV SANDBOX_ENABLED=false
 ENV STORAGE_DIR=/app/storage
 
+ENV PORT=8000
 EXPOSE 8000
-CMD ["uvicorn", "app.web.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["sh", "-c", "uvicorn app.web.main:app --host 0.0.0.0 --port ${PORT}"]

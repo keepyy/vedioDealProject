@@ -63,7 +63,7 @@ if ($BuildSandboxImage) {
 
 # 拷贝 .env.example -> .env（如不存在）
 if (-not (Test-Path .env)) {
-    Write-Host "▶ 首次运行：从 .env.example 生成 .env（请按需修改飞书配置）" -ForegroundColor Yellow
+    Write-Host "▶ 首次运行：从 .env.example 生成 .env（请按需修改运行配置）" -ForegroundColor Yellow
     Copy-Item .env.example .env
 }
 

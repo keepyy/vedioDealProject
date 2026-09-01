@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>固定窗口编辑 · {{ job_id }}</title>
   <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+  <link rel="stylesheet" href="/static/processing-state.css">
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif; }
     .hero-grad { background: linear-gradient(135deg, #06b6d4 0%, #22d3ee 25%, #c084fc 60%, #f0abfc 80%, #ec4899 100%); background-attachment: fixed; }
@@ -22,8 +23,9 @@
     .loading { position: fixed; inset: 0; z-index: 100; display: none; place-items: center; background: rgba(15,23,42,.58); color: white; }
     .loading.active { display: grid; }
     .region-canvas { position: relative; width: 100%; height: 100%; user-select: none; }
-    .region-rect { position: absolute; z-index: 5; border: 2px solid; border-radius: 4px; cursor: move; box-sizing: border-box; }
-    .region-rect::after { content: ''; position: absolute; right: -5px; bottom: -5px; width: 14px; height: 14px; border: 2px solid #334155; border-radius: 3px; background: white; cursor: nwse-resize; }
+    .region-rect { position: absolute; z-index: 5; border: 2px solid; border-radius: 4px; cursor: move; box-sizing: border-box; touch-action: none; -webkit-user-select: none; user-select: none; }
+    .region-rect::after { content: ''; position: absolute; right: -7px; bottom: -7px; width: 18px; height: 18px; border: 2px solid #334155; border-radius: 4px; background: white; cursor: nwse-resize; }
+    .region-rect.active { box-shadow: 0 0 0 4px rgba(255,255,255,.7), 0 5px 18px rgba(15,23,42,.4); }
     .region-rect.logo { border-color: #10b981; background: rgba(15,23,42,.32); color: white; font-weight: 700; text-shadow: 0 1px 3px black; display: flex; align-items: center; padding: 4px 8px; }
     .region-rect.mask { border-color: #3b82f6; background: rgba(59,130,246,.16); backdrop-filter: blur(7px); }
     .region-rect.mask[data-strength="light"] { backdrop-filter: blur(3px); }
@@ -47,9 +49,13 @@
       transform: translateX(-50%);
       backdrop-filter: blur(12px);
     }
-    .preview-shell.floating .preview-title { display: flex; color: #334155; margin-bottom: 8px; }
+    .preview-shell.floating .preview-title { display: flex; color: #334155; margin-bottom: 8px; cursor: move; user-select: none; touch-action: none; }
+    .preview-shell.floating.dragging { transition: none; box-shadow: 0 28px 80px rgba(15, 23, 42, .52); }
     @media (max-width: 767px) {
+      main { padding-left: 10px !important; padding-right: 10px !important; }
       .preview-shell.floating { top: 72px; width: calc(100vw - 20px); padding: 8px; }
+      .region-rect::after { right: -11px; bottom: -11px; width: 28px; height: 28px; border-width: 3px; border-radius: 7px; }
+      .region-label { top: -24px; min-height: 22px; padding: 3px 7px; }
     }
   </style>
 </head>
@@ -72,8 +78,8 @@
       <div class="flex justify-between mb-4"><h2 class="font-bold text-tea">原视频预览</h2><span class="text-xs text-slate-500">页面共用一个播放器</span></div>
       <div id="previewAnchor" class="w-full max-w-3xl mx-auto aspect-[4/3]">
         <div id="previewShell" class="preview-shell w-full h-full">
-          <div class="preview-title hidden items-center justify-between text-xs font-semibold">
-            <span>片段播放预览</span><span>随编辑窗口悬浮</span>
+          <div id="previewDragHandle" class="preview-title hidden items-center justify-between text-xs font-semibold">
+            <span>片段播放预览</span><span>按住此处可拖动</span>
           </div>
           <div id="regionCanvas" class="region-canvas aspect-[4/3] rounded-xl overflow-hidden bg-black">
             <video id="videoPlayer" src="{{ video_url }}" controls preload="metadata" playsinline class="absolute inset-0 w-full h-full object-contain"></video>
@@ -86,6 +92,7 @@
       <input type="hidden" name="windows_json" id="windowsJson" value="[]">
       <input type="hidden" name="logos_json" id="logosJson" value="[]">
       <input type="hidden" name="masks_json" id="masksJson" value="[]">
+      <input type="hidden" name="covers_json" id="coversJson" value="[]">
       <section class="glass rounded-2xl shadow-xl p-5 md:p-6">
         <div class="flex flex-wrap items-start justify-between gap-3">
           <div><h2 class="font-bold text-tea">文字 Logo 与蒙版区域</h2><p class="text-xs text-slate-500 mt-1">绿色为可定位的文字 Logo，蓝色为手动模糊蒙版；均可直接在上方视频画面拖动调整。</p></div>
@@ -99,15 +106,27 @@
       </section>
       <section class="glass rounded-2xl shadow-xl p-5 md:p-6">
         <div class="flex flex-wrap items-end justify-between gap-3 mb-5">
-          <div><h2 class="font-bold text-tea">全部固定窗口</h2><p class="text-xs text-slate-500 mt-1">每个时间条点击两次新增区间；橙色播放头与上方播放器同步。</p></div>
-          <div class="text-xs text-slate-600">固定时长 {{ segment_minutes }} 分钟 · 共 <b>{{ analysis_segments|length }}</b> 个窗口</div>
+          <div><h2 class="font-bold text-tea">视频时间片段</h2><p class="text-xs text-slate-500 mt-1">在完整时间条点击两次添加一个区间；多个区间可不连续，相同成品编号的区间会按时间顺序合成。</p></div>
+          <div class="text-xs text-slate-600">完整视频自由选区</div>
         </div>
         <div id="windowList" class="space-y-5"></div>
       </section>
 
+      <section class="merge-board glass rounded-2xl shadow-xl p-5 md:p-6">
+        <div class="flex flex-wrap items-start justify-between gap-3 mb-4">
+          <div><h2 class="font-bold text-tea">拖拽组合成品</h2><p class="text-xs text-slate-600 mt-1">把片段卡拖到同一个成品盒中即可合并；手机端可先点片段，再点目标成品盒。</p></div>
+          <div class="flex flex-wrap gap-2">
+            <button type="button" id="splitAllOutputs" class="px-3 py-1.5 rounded-full bg-white/75 text-violet-700 text-xs font-bold shadow-sm">每段独立</button>
+            <button type="button" id="addOutputGroup" class="px-3 py-1.5 rounded-full bg-gradient-to-r from-cyan-500 to-pink-500 text-white text-xs font-bold shadow">＋ 新建成品盒</button>
+          </div>
+        </div>
+        <div id="mergeHint" class="mb-3 rounded-xl bg-white/55 px-3 py-2 text-xs text-slate-600">拖动片段即可改变合并结果，成品内会自动按原视频时间排序。</div>
+        <div id="mergeBoard" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3"></div>
+      </section>
+
       <section class="glass rounded-2xl shadow-xl p-5 md:p-6">
         <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
-          <div><h2 class="font-bold text-tea">将生成的独立视频</h2><p class="text-xs text-slate-500 mt-1">每个有效区间生成一个独立视频，不进行合并。</p></div>
+          <div><h2 class="font-bold text-tea">将生成的独立视频</h2><p class="text-xs text-slate-500 mt-1">每个成品盒生成一个视频，盒内多个片段会按时间顺序合并。</p></div>
           <div class="text-sm text-slate-700"><b id="outputCount">0</b> 段 · 合计 <b id="totalDuration">0.0 秒</b></div>
         </div>
         <div id="outputList" class="space-y-3"></div>
@@ -116,11 +135,24 @@
 
       <section class="glass rounded-2xl shadow-xl p-5 flex flex-wrap items-center gap-4">
         <div id="formError" class="hidden flex-1 text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2"></div>
-        <button type="submit" class="ml-auto btn-tea px-6 py-2.5 rounded-xl font-semibold text-white shadow-md">确认剪辑并直接审核生成 →</button>
+        <button type="button" id="cancelJob" data-processing-text="取消中…" class="px-6 py-2.5 rounded-xl font-semibold text-red-600 bg-white/80 border border-red-300 shadow-sm">取消任务</button>
+        <button type="submit" data-processing-text="提交中…" class="ml-auto btn-tea px-6 py-2.5 rounded-xl font-semibold text-white shadow-md">确认剪辑并直接审核生成 →</button>
       </section>
     </form>
+    <form id="cancelForm" method="post" action="/job/{{ job_id }}/cancel" class="hidden"></form>
   </main>
 
+  <div id="cancelModal" class="hidden fixed inset-0 z-[95] place-items-center bg-slate-950/55 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="cancelModalTitle">
+    <div class="w-full max-w-sm rounded-3xl border border-white/70 bg-white/95 p-6 text-center shadow-2xl">
+      <div class="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-red-50 text-2xl text-red-600">!</div>
+      <h2 id="cancelModalTitle" class="mt-4 text-xl font-bold text-slate-800">取消当前任务？</h2>
+      <p class="mt-2 text-sm leading-6 text-slate-600">上传、下载及已生成的任务文件将被删除，此操作无法撤销。</p>
+      <div class="mt-6 flex justify-center gap-3">
+        <button type="button" id="closeCancelModal" class="px-5 py-2.5 rounded-xl bg-slate-100 text-slate-700 font-semibold">继续处理</button>
+        <button type="button" id="confirmCancelJob" class="px-5 py-2.5 rounded-xl bg-red-600 text-white font-semibold shadow">确认取消</button>
+      </div>
+    </div>
+  </div>
   <div id="loading" class="loading"><div class="font-semibold">正在提交固定窗口设置…</div></div>
   <script>
     const mode = {{ mode | tojson }};
@@ -137,6 +169,9 @@
     let activeRegion = null;
     const previewAnchor = document.getElementById('previewAnchor');
     const previewShell = document.getElementById('previewShell');
+    const previewDragHandle = document.getElementById('previewDragHandle');
+    let previewDrag = null;
+    let previewPosition = null;
     const windowList = document.getElementById('windowList');
     const windowsField = document.getElementById('windowsJson');
     let videoDuration = Number.isFinite(configuredDuration) ? configuredDuration : 0;
@@ -144,12 +179,16 @@
       window_idx: windowIdx,
       start_sec: Number(window.start_sec),
       end_sec: Number(window.end_sec),
-      enabled: mode === 'manual',
+      enabled: true,
       person_id: null,
-      subsegments: mode === 'manual' ? [{start_sec: Number(window.start_sec), end_sec: Number(window.end_sec)}] : [],
+      subsegments: [],
       pendingStart: null,
     }));
     let playingRange = null;
+    let selectedMergeItem = null;
+    const extraOutputGroups = new Set();
+    const outputCovers = new Map();
+    const coversField = document.getElementById('coversJson');
 
     function videoBox() {
       const cw = regionCanvas.clientWidth;
@@ -182,7 +221,7 @@
         y: Number(data.y ?? Math.round(sourceHeight * .06)),
         w: Number(data.w ?? Math.round(sourceWidth * .18)),
         h: Number(data.h ?? Math.round(sourceHeight * .12)),
-        strength: data.strength || 'medium',
+        strength: data.strength || 'strong',
         text: data.text || '我的 Logo',
         font_size: Number(data.font_size || 36),
         color: data.color || '#ffffff',
@@ -195,30 +234,43 @@
       regions.push(region);
       regionCanvas.appendChild(el);
       positionRegion(region);
-      el.addEventListener('mousedown', event => {
+      el.addEventListener('pointerdown', event => {
+        if (activeRegion) return;
         const rect = el.getBoundingClientRect();
-        const resize = event.clientX >= rect.right - 16 && event.clientY >= rect.bottom - 16;
-        activeRegion = {region, resize, startX: event.clientX, startY: event.clientY, left: parseFloat(el.style.left), top: parseFloat(el.style.top), width: el.offsetWidth, height: el.offsetHeight};
+        const resizeHandleSize = event.pointerType === 'touch' ? 36 : 22;
+        const resize = event.clientX >= rect.right - resizeHandleSize && event.clientY >= rect.bottom - resizeHandleSize;
+        activeRegion = {region, resize, pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, left: parseFloat(el.style.left), top: parseFloat(el.style.top), width: el.offsetWidth, height: el.offsetHeight};
+        el.classList.add('active');
+        el.setPointerCapture(event.pointerId);
         event.preventDefault(); event.stopPropagation();
       });
+      el.addEventListener('pointermove', event => {
+        if (!activeRegion || activeRegion.pointerId !== event.pointerId || activeRegion.region !== region) return;
+        const box = videoBox();
+        const dx = event.clientX - activeRegion.startX;
+        const dy = event.clientY - activeRegion.startY;
+        if (activeRegion.resize) {
+          region.el.style.width = `${Math.max(20, Math.min(box.left + box.width - parseFloat(region.el.style.left), activeRegion.width + dx))}px`;
+          region.el.style.height = `${Math.max(20, Math.min(box.top + box.height - parseFloat(region.el.style.top), activeRegion.height + dy))}px`;
+        } else {
+          region.el.style.left = `${Math.max(box.left, Math.min(box.left + box.width - region.el.offsetWidth, activeRegion.left + dx))}px`;
+          region.el.style.top = `${Math.max(box.top, Math.min(box.top + box.height - region.el.offsetHeight, activeRegion.top + dy))}px`;
+        }
+        syncRegionFromElement(region);
+        event.preventDefault();
+      });
+      const endRegionPointer = event => {
+        if (!activeRegion || activeRegion.pointerId !== event.pointerId || activeRegion.region !== region) return;
+        syncRegionFromElement(region);
+        region.el.classList.remove('active');
+        activeRegion = null;
+        renderRegions();
+        event.preventDefault();
+      };
+      el.addEventListener('pointerup', endRegionPointer);
+      el.addEventListener('pointercancel', endRegionPointer);
       renderRegions();
     }
-    window.addEventListener('mousemove', event => {
-      if (!activeRegion) return;
-      const {region, resize, startX, startY} = activeRegion;
-      const box = videoBox();
-      const dx = event.clientX - startX;
-      const dy = event.clientY - startY;
-      if (resize) {
-        region.el.style.width = `${Math.max(12, Math.min(box.left + box.width - parseFloat(region.el.style.left), activeRegion.width + dx))}px`;
-        region.el.style.height = `${Math.max(12, Math.min(box.top + box.height - parseFloat(region.el.style.top), activeRegion.height + dy))}px`;
-      } else {
-        region.el.style.left = `${Math.max(box.left, Math.min(box.left + box.width - region.el.offsetWidth, activeRegion.left + dx))}px`;
-        region.el.style.top = `${Math.max(box.top, Math.min(box.top + box.height - region.el.offsetHeight, activeRegion.top + dy))}px`;
-      }
-      syncRegionFromElement(region);
-    });
-    window.addEventListener('mouseup', () => { if (activeRegion) { syncRegionFromElement(activeRegion.region); activeRegion = null; renderRegions(); } });
     function renderRegions() {
       const host = document.getElementById('regionList');
       host.replaceChildren();
@@ -258,6 +310,18 @@
       document.getElementById('logosJson').value = JSON.stringify(logos);
       document.getElementById('masksJson').value = JSON.stringify(masks);
     }
+    const cancelModal = document.getElementById('cancelModal');
+    function setCancelModal(open) {
+      cancelModal.classList.toggle('hidden', !open);
+      cancelModal.classList.toggle('grid', open);
+    }
+    document.getElementById('cancelJob').addEventListener('click', () => setCancelModal(true));
+    document.getElementById('closeCancelModal').addEventListener('click', () => setCancelModal(false));
+    cancelModal.addEventListener('click', event => { if (event.target === cancelModal) setCancelModal(false); });
+    document.getElementById('confirmCancelJob').addEventListener('click', () => {
+      ProcessingState.start(document.getElementById('confirmCancelJob'));
+      document.getElementById('cancelForm').requestSubmit();
+    });
     document.getElementById('addLogo').addEventListener('click', () => addRegion('logo'));
     document.getElementById('addMask').addEventListener('click', () => addRegion('mask'));
     initialLogos.forEach(item => addRegion('logo', Array.isArray(item) ? {x:item[0],y:item[1],w:item[2],h:item[3]} : item));
@@ -277,17 +341,29 @@
         ? `${hours}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`
         : `${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
     }
+    function formatMinuteSecond(value) {
+      const totalSeconds = Math.max(0, Math.round(finite(value) || 0));
+      const minutes = Math.floor(totalSeconds / 60);
+      const seconds = totalSeconds % 60;
+      return `${minutes}.${String(seconds).padStart(2, '0')}`;
+    }
+    function parseMinuteSecond(value) {
+      if (typeof value !== 'string' || !value.trim()) return null;
+      const match = value.trim().match(/^(\d+)(?:[.:](\d{1,2}))?$/);
+      if (!match) return null;
+      const minutes = Number(match[1]);
+      const seconds = Number(match[2] || 0);
+      if (!Number.isFinite(minutes) || seconds >= 60) return null;
+      return minutes * 60 + seconds;
+    }
     function normalize(items, state) {
-      return items.map(item => ({start_sec: finite(item.start_sec), end_sec: finite(item.end_sec)}))
+      return items.map((item, index) => ({
+          start_sec: finite(item.start_sec), end_sec: finite(item.end_sec),
+          output_group: Math.max(1, Number(item.output_group) || index + 1),
+        }))
         .filter(item => item.start_sec !== null && item.end_sec !== null &&
           item.start_sec >= state.start_sec && item.end_sec <= state.end_sec && item.start_sec < item.end_sec)
-        .sort((a, b) => a.start_sec - b.start_sec || a.end_sec - b.end_sec)
-        .reduce((result, item) => {
-          const last = result[result.length - 1];
-          if (last && item.start_sec <= last.end_sec) last.end_sec = Math.max(last.end_sec, item.end_sec);
-          else result.push({...item});
-          return result;
-        }, []);
+        .sort((a, b) => a.start_sec - b.start_sec || a.end_sec - b.end_sec);
     }
     function personSegments(personId, state) {
       const person = people.find(item => String(item.person_id) === personId);
@@ -306,6 +382,30 @@
       button.addEventListener('click', handler);
       return button;
     }
+    function updateWindowBoundary(windowIndex, rawValue) {
+      const current = states[windowIndex];
+      const next = states[windowIndex + 1];
+      if (!current || !next) return false;
+      const boundary = parseMinuteSecond(rawValue);
+      if (boundary === null || boundary <= current.start_sec || boundary >= next.end_sec) return false;
+      const oldBoundary = current.end_sec;
+      current.end_sec = boundary;
+      next.start_sec = boundary;
+      current.subsegments = current.subsegments.map(item => ({
+        start_sec: Math.max(current.start_sec, Math.min(boundary, item.start_sec)),
+        end_sec: Math.max(current.start_sec, Math.min(boundary, Math.abs(item.end_sec - oldBoundary) < .01 ? boundary : item.end_sec)),
+      })).filter(item => item.end_sec > item.start_sec);
+      next.subsegments = next.subsegments.map(item => ({
+        start_sec: Math.min(next.end_sec, Math.max(boundary, Math.abs(item.start_sec - oldBoundary) < .01 ? boundary : item.start_sec)),
+        end_sec: Math.min(next.end_sec, Math.max(boundary, item.end_sec)),
+      })).filter(item => item.end_sec > item.start_sec);
+      current.pendingStart = null;
+      next.pendingStart = null;
+      stopRangePlayback();
+      renderAll();
+      return true;
+    }
+
     function renderWindow(state) {
       const card = document.createElement('article');
       card.className = 'rounded-2xl border border-white/70 bg-white/65 p-4 md:p-5 shadow';
@@ -315,6 +415,7 @@
         <div class="flex flex-wrap items-center gap-3">
           <div><h3 class="font-bold text-tea">窗口 #${state.window_idx + 1}</h3>
             <div class="text-xs text-slate-500 mt-1">${formatTime(state.start_sec)} – ${formatTime(state.end_sec)} · ${duration.toFixed(1)} 秒</div></div>
+          ${state.window_idx < states.length - 1 ? `<label class="text-xs text-slate-600">与下一段边界（分钟.秒）<input data-window-boundary type="text" inputmode="decimal" value="${formatMinuteSecond(state.end_sec)}" class="block mt-1 w-28 px-2 py-1 rounded border border-cyan-300 bg-white"></label>` : ''}
           <label class="ml-auto flex items-center gap-2 text-sm font-semibold">
             <input data-enable type="checkbox" class="w-5 h-5 accent-cyan-600" ${state.enabled ? 'checked' : ''}>
             <span>${state.enabled ? '启用' : '跳过'}</span>
@@ -332,6 +433,12 @@
           <div data-subsegments class="space-y-2"></div>
         </div>`;
 
+      const boundaryInput = card.querySelector('[data-window-boundary]');
+      if (boundaryInput) boundaryInput.addEventListener('change', () => {
+        const valid = updateWindowBoundary(state.window_idx, boundaryInput.value);
+        boundaryInput.classList.toggle('invalid', !valid);
+        if (!valid) boundaryInput.value = formatMinuteSecond(state.end_sec);
+      });
       const enable = card.querySelector('[data-enable]');
       const peopleBox = card.querySelector('[data-people]');
       const choices = [{person_id: null, thumbnail_url: '', label: '不选人物'}, ...people.map((person, idx) => ({...person, label: `人物 ${idx + 1}`}))];
@@ -365,7 +472,7 @@
       enable.addEventListener('change', () => {
         state.enabled = enable.checked;
         if (state.enabled && !state.subsegments.length) {
-          state.subsegments = [{start_sec: state.start_sec, end_sec: state.end_sec}];
+          state.subsegments = [{start_sec: state.start_sec, end_sec: state.end_sec, output_group: 1}];
         }
         state.pendingStart = null;
         renderAll();
@@ -376,12 +483,13 @@
           if (!state.enabled) return;
           const start = state.subsegments.length ? state.subsegments[state.subsegments.length - 1].end_sec : state.start_sec;
           const safeStart = start >= state.end_sec ? state.start_sec : start;
-          state.subsegments.push({start_sec: safeStart, end_sec: Math.min(state.end_sec, safeStart + Math.min(60, state.end_sec - safeStart))});
+          const nextGroup = Math.max(0, ...state.subsegments.map(item => Number(item.output_group) || 0)) + 1;
+          state.subsegments.push({start_sec: safeStart, end_sec: Math.min(state.end_sec, safeStart + Math.min(60, state.end_sec - safeStart)), output_group: nextGroup});
           renderAll();
         }),
         createButton('整段保留', 'px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-700 text-xs font-semibold', () => {
           state.enabled = true;
-          state.subsegments = [{start_sec: state.start_sec, end_sec: state.end_sec}];
+          state.subsegments = [{start_sec: state.start_sec, end_sec: state.end_sec, output_group: 1}];
           state.pendingStart = null;
           renderAll();
         }),
@@ -402,7 +510,10 @@
           const start = Math.min(state.pendingStart, point);
           const end = Math.max(state.pendingStart, point);
           state.pendingStart = null;
-          if (start < end) state.subsegments = normalize([...state.subsegments, {start_sec: start, end_sec: end}], state);
+          if (start < end) {
+            const nextGroup = Math.max(0, ...state.subsegments.map(item => Number(item.output_group) || 0)) + 1;
+            state.subsegments = normalize([...state.subsegments, {start_sec: start, end_sec: end, output_group: nextGroup}], state);
+          }
         }
         renderAll();
       });
@@ -435,16 +546,30 @@
         const isPlaying = playingRange && playingRange.window_idx === state.window_idx && playingRange.subsegment_idx === index;
         row.className = `flex flex-wrap items-center gap-2 border rounded-xl px-3 py-2 text-sm ${isPlaying ? 'bg-cyan-50 border-cyan-400 ring-2 ring-cyan-200' : 'bg-white/75 border-slate-200'}`;
         const start = document.createElement('input');
-        start.type = 'number'; start.step = '0.001'; start.value = item.start_sec; start.className = 'w-28 px-2 py-1 rounded border border-slate-300';
-        const end = start.cloneNode(); end.value = item.end_sec;
+        start.type = 'text'; start.inputMode = 'decimal'; start.placeholder = '分钟.秒'; start.value = formatMinuteSecond(item.start_sec); start.className = 'w-28 px-2 py-1 rounded border border-slate-300';
+        const end = start.cloneNode(); end.value = formatMinuteSecond(item.end_sec);
         const apply = () => {
-          const next = {start_sec: finite(start.value), end_sec: finite(end.value)};
+          const next = {start_sec: parseMinuteSecond(start.value), end_sec: parseMinuteSecond(end.value), output_group: item.output_group || index + 1};
           const valid = next.start_sec !== null && next.end_sec !== null && next.start_sec >= state.start_sec && next.end_sec <= state.end_sec && next.start_sec < next.end_sec;
           start.classList.toggle('invalid', !valid); end.classList.toggle('invalid', !valid);
-          if (valid) { state.subsegments[index] = next; syncPayload(); renderOutputs(); }
+          if (valid) {
+            state.subsegments[index] = next;
+            start.value = formatMinuteSecond(next.start_sec);
+            end.value = formatMinuteSecond(next.end_sec);
+            syncPayload(); renderOutputs();
+          }
         };
         start.addEventListener('change', apply); end.addEventListener('change', apply);
-        row.append(document.createTextNode(`#${index + 1}`), start, document.createTextNode('至'), end, document.createTextNode('秒'));
+        const groupLabel = document.createElement('label');
+        groupLabel.className = 'flex items-center gap-1 text-xs text-slate-600';
+        groupLabel.append(document.createTextNode('合成到成品'));
+        const group = document.createElement('input');
+        group.type = 'number'; group.min = '1'; group.max = '99'; group.inputMode = 'numeric';
+        group.value = String(item.output_group || index + 1);
+        group.className = 'w-14 px-2 py-1 rounded border border-violet-300';
+        group.addEventListener('change', () => { item.output_group = Math.max(1, Math.min(99, Number(group.value) || index + 1)); group.value = String(item.output_group); syncPayload(); renderMergeBoard(); renderOutputs(); });
+        groupLabel.appendChild(group);
+        row.append(document.createTextNode(`#${index + 1}`), start, document.createTextNode('至'), end, document.createTextNode('（分钟.秒）'), groupLabel);
         row.appendChild(createButton(isPlaying ? '正在播放' : '▶ 播放此段', 'ml-auto px-3 py-1 rounded-lg bg-gradient-to-r from-cyan-500 to-pink-500 text-white text-xs font-semibold', () => {
           playRange(state, index);
         }));
@@ -457,11 +582,55 @@
       if (!state.subsegments.length) list.innerHTML = '<div class="text-xs text-slate-500 italic">暂无区间，可选择人物、手动新增或整段保留。</div>';
     }
 
+    function clampPreviewPosition(left, top) {
+      const width = previewShell.offsetWidth;
+      const height = previewShell.offsetHeight;
+      return {
+        left: Math.max(8, Math.min(window.innerWidth - width - 8, left)),
+        top: Math.max(8, Math.min(window.innerHeight - height - 8, top)),
+      };
+    }
+    function applyPreviewPosition() {
+      if (!previewPosition || !previewShell.classList.contains('floating')) return;
+      previewPosition = clampPreviewPosition(previewPosition.left, previewPosition.top);
+      previewShell.style.left = `${previewPosition.left}px`;
+      previewShell.style.top = `${previewPosition.top}px`;
+      previewShell.style.transform = 'none';
+    }
     function updateFloatingPreview(force = false) {
       const anchor = previewAnchor.getBoundingClientRect();
-      previewShell.classList.toggle('floating', force || anchor.bottom < 76 || anchor.top > window.innerHeight);
+      const floating = force || anchor.bottom < 76 || anchor.top > window.innerHeight;
+      previewShell.classList.toggle('floating', floating);
+      if (floating) applyPreviewPosition();
+      else {
+        previewPosition = null;
+        previewShell.style.left = '';
+        previewShell.style.top = '';
+        previewShell.style.transform = '';
+      }
       requestAnimationFrame(() => regions.forEach(positionRegion));
     }
+    previewDragHandle.addEventListener('pointerdown', event => {
+      if (!previewShell.classList.contains('floating')) return;
+      const rect = previewShell.getBoundingClientRect();
+      previewPosition = {left: rect.left, top: rect.top};
+      previewDrag = {pointerId: event.pointerId, offsetX: event.clientX - rect.left, offsetY: event.clientY - rect.top};
+      previewDragHandle.setPointerCapture(event.pointerId);
+      previewShell.classList.add('dragging');
+      event.preventDefault();
+    });
+    previewDragHandle.addEventListener('pointermove', event => {
+      if (!previewDrag || previewDrag.pointerId !== event.pointerId) return;
+      previewPosition = clampPreviewPosition(event.clientX - previewDrag.offsetX, event.clientY - previewDrag.offsetY);
+      applyPreviewPosition();
+    });
+    function endPreviewDrag(event) {
+      if (!previewDrag || previewDrag.pointerId !== event.pointerId) return;
+      previewDrag = null;
+      previewShell.classList.remove('dragging');
+    }
+    previewDragHandle.addEventListener('pointerup', endPreviewDrag);
+    previewDragHandle.addEventListener('pointercancel', endPreviewDrag);
     function stopRangePlayback() {
       playingRange = null;
       player.pause();
@@ -484,30 +653,139 @@
     function payload() {
       return states.map(state => ({
         window_idx: state.window_idx,
+        window_start_sec: +Number(state.start_sec).toFixed(3),
+        window_end_sec: +Number(state.end_sec).toFixed(3),
         enabled: state.enabled,
         person_id: state.person_id,
         subsegments: state.subsegments.map(item => ({
           start_sec: +Number(item.start_sec).toFixed(3),
           end_sec: +Number(item.end_sec).toFixed(3),
+          output_group: Math.max(1, Number(item.output_group) || 1),
         })),
       }));
     }
     function syncPayload() { windowsField.value = JSON.stringify(payload()); }
+    function syncCoversPayload() {
+      const activeGroups = new Set(mergeItems().map(({item}) => Math.max(1, Number(item.output_group) || 1)));
+      [...outputCovers.keys()].forEach(group => { if (!activeGroups.has(group)) outputCovers.delete(group); });
+      coversField.value = JSON.stringify([...outputCovers.entries()].map(([output_group, cover_time_sec]) => ({
+        output_group,
+        cover_time_sec: +Number(cover_time_sec).toFixed(3),
+      })));
+    }
+    function mergeItems() {
+      const items = [];
+      states.forEach(state => state.subsegments.forEach((item, index) => {
+        if (state.enabled) items.push({state, item, index});
+      }));
+      return items.sort((a, b) => a.item.start_sec - b.item.start_sec || a.item.end_sec - b.item.end_sec);
+    }
+    function assignOutputGroup(windowIdx, segmentIdx, group) {
+      const state = states.find(item => item.window_idx === windowIdx);
+      const segment = state && state.subsegments[segmentIdx];
+      if (!segment) return;
+      segment.output_group = Math.max(1, Math.min(99, Number(group) || 1));
+      extraOutputGroups.delete(segment.output_group);
+      selectedMergeItem = null;
+      renderAll();
+    }
+    function renderMergeBoard() {
+      const board = document.getElementById('mergeBoard');
+      const hint = document.getElementById('mergeHint');
+      if (!board) return;
+      board.replaceChildren();
+      const items = mergeItems();
+      const groups = new Set(items.map(({item}) => Math.max(1, Number(item.output_group) || 1)));
+      extraOutputGroups.forEach(group => groups.add(group));
+      if (!groups.size) groups.add(1);
+      [...groups].sort((a, b) => a - b).forEach(group => {
+        const lane = document.createElement('div');
+        lane.className = 'merge-lane rounded-2xl p-3';
+        lane.dataset.outputGroup = String(group);
+        const laneItems = items.filter(({item}) => Math.max(1, Number(item.output_group) || 1) === group);
+        const seconds = laneItems.reduce((sum, entry) => sum + entry.item.end_sec - entry.item.start_sec, 0);
+        const existingCover = outputCovers.get(group);
+        if (laneItems.length && (!Number.isFinite(existingCover) || !laneItems.some(entry => existingCover >= entry.item.start_sec && existingCover <= entry.item.end_sec))) {
+          const current = finite(player.currentTime);
+          const currentItem = laneItems.find(entry => current !== null && current >= entry.item.start_sec && current <= entry.item.end_sec);
+          outputCovers.set(group, currentItem ? current : laneItems[0].item.start_sec);
+          syncCoversPayload();
+        }
+        const coverTime = outputCovers.get(group);
+        lane.innerHTML = `<div class="flex items-center justify-between gap-2 mb-2"><div><div class="font-bold text-violet-700">成品盒 #${group}</div><div class="text-[11px] text-slate-500">${laneItems.length} 个片段 · ${seconds.toFixed(1)} 秒</div></div><div class="text-lg">✦</div></div>
+          <div class="mb-2 rounded-xl bg-white/70 p-2 text-xs"><div class="font-semibold text-slate-700">2 秒 4K 封面片头</div><div class="mt-1 flex items-center justify-between gap-2"><span data-cover-label class="text-slate-500">${Number.isFinite(coverTime) ? `已选 ${formatTime(coverTime)}` : '请先定位播放器画面'}</span><button type="button" data-set-cover class="rounded-lg bg-violet-600 px-2.5 py-1.5 font-semibold text-white">使用当前画面</button></div></div>
+          <div data-lane-items class="space-y-2"></div>`;
+        lane.querySelector('[data-set-cover]').addEventListener('click', event => {
+          event.stopPropagation();
+          const current = finite(player.currentTime);
+          if (current === null || !laneItems.some(entry => current >= entry.item.start_sec && current <= entry.item.end_sec)) {
+            hint.textContent = `请先播放或定位到成品盒 #${group} 的任一片段内，再选择封面。`;
+            return;
+          }
+          outputCovers.set(group, current);
+          syncCoversPayload();
+          renderMergeBoard();
+          renderOutputs();
+        });
+        const itemBox = lane.querySelector('[data-lane-items]');
+        laneItems.forEach(({state, item, index}, order) => {
+          const chip = document.createElement('button');
+          chip.type = 'button';
+          chip.draggable = true;
+          chip.className = `merge-chip w-full rounded-xl border border-white/80 px-3 py-2 text-left ${selectedMergeItem && selectedMergeItem.windowIdx === state.window_idx && selectedMergeItem.segmentIdx === index ? 'selected' : ''}`;
+          chip.innerHTML = `<div class="flex items-center gap-2"><span class="grid w-6 h-6 shrink-0 place-items-center rounded-full bg-gradient-to-br from-cyan-500 to-pink-500 text-[11px] font-bold text-white">${order + 1}</span><div class="min-w-0"><div class="truncate text-xs font-bold text-slate-700">片段 #${index + 1} · ${formatTime(item.start_sec)} – ${formatTime(item.end_sec)}</div><div class="text-[11px] text-slate-500">按住拖拽 · 点击后再点目标盒</div></div></div>`;
+          chip.addEventListener('dragstart', event => {
+            event.dataTransfer.setData('text/plain', JSON.stringify({windowIdx: state.window_idx, segmentIdx: index}));
+            event.dataTransfer.effectAllowed = 'move';
+          });
+          chip.addEventListener('click', event => {
+            event.stopPropagation();
+            selectedMergeItem = {windowIdx: state.window_idx, segmentIdx: index};
+            hint.textContent = `已选择 ${formatTime(item.start_sec)} – ${formatTime(item.end_sec)}，请点击目标成品盒。`;
+            renderMergeBoard();
+          });
+          itemBox.appendChild(chip);
+        });
+        if (!laneItems.length) itemBox.innerHTML = '<div class="rounded-xl border border-dashed border-violet-200 px-3 py-5 text-center text-xs text-slate-400">拖入片段到这里</div>';
+        lane.addEventListener('dragover', event => { event.preventDefault(); lane.classList.add('drag-over'); });
+        lane.addEventListener('dragleave', () => lane.classList.remove('drag-over'));
+        lane.addEventListener('drop', event => {
+          event.preventDefault();
+          lane.classList.remove('drag-over');
+          try {
+            const data = JSON.parse(event.dataTransfer.getData('text/plain'));
+            assignOutputGroup(data.windowIdx, data.segmentIdx, group);
+          } catch (_) {}
+        });
+        lane.addEventListener('click', () => {
+          if (selectedMergeItem) assignOutputGroup(selectedMergeItem.windowIdx, selectedMergeItem.segmentIdx, group);
+        });
+        board.appendChild(lane);
+      });
+      if (!items.length) hint.textContent = '请先在时间条添加片段，随后可通过拖拽安排合并方式。';
+      else if (!selectedMergeItem) hint.textContent = '拖动片段即可改变合并结果，成品内会自动按原视频时间排序。';
+    }
     function renderOutputs() {
       const outputs = states.filter(state => state.enabled && state.subsegments.length);
       const list = document.getElementById('outputList');
       list.replaceChildren();
       let total = 0;
-      let outputCount = 0;
-      outputs.forEach(state => {
-        const seconds = state.subsegments.reduce((sum, item) => sum + item.end_sec - item.start_sec, 0);
-        total += seconds;
-        outputCount += state.subsegments.length;
+      const groups = new Map();
+      outputs.forEach(state => state.subsegments.forEach((item, index) => {
+        total += item.end_sec - item.start_sec;
+        const group = Math.max(1, Number(item.output_group) || index + 1);
+        if (!groups.has(group)) groups.set(group, []);
+        groups.get(group).push(item);
+      }));
+      const outputCount = groups.size;
+      [...groups.entries()].sort((a, b) => a[0] - b[0]).forEach(([group, items]) => {
+        const seconds = items.reduce((sum, item) => sum + item.end_sec - item.start_sec, 0);
         const row = document.createElement('div');
         row.className = 'rounded-xl border border-white/70 bg-white/70 px-4 py-3';
-        row.innerHTML = `<div class="font-semibold text-tea">窗口 #${state.window_idx + 1} · ${formatTime(state.start_sec)} – ${formatTime(state.end_sec)}</div>
-          <div class="mt-1 text-xs text-slate-600">${state.subsegments.map(item => `${formatTime(item.start_sec)} – ${formatTime(item.end_sec)}`).join('；')}</div>
-          <div class="mt-1 text-xs font-semibold text-cyan-700">将生成 ${state.subsegments.length} 个独立视频 · 合计 ${seconds.toFixed(1)} 秒</div>`;
+        row.innerHTML = `<div class="font-semibold text-tea">成品 #${group}</div>
+          <div class="mt-1 text-xs text-slate-600">${items.map(item => `${formatTime(item.start_sec)} – ${formatTime(item.end_sec)}`).join('；')}</div>
+          <div class="mt-1 text-xs font-semibold text-cyan-700">将合成 1 个视频 · ${items.length} 个片段 · 合计 ${seconds.toFixed(1)} 秒</div>
+          <div class="mt-1 text-xs font-semibold ${outputCovers.has(group) ? 'text-violet-700' : 'text-amber-700'}">${outputCovers.has(group) ? `封面片头：${formatTime(outputCovers.get(group))} · 3840×2880 · 2 秒` : '尚未选择封面画面'}</div>`;
         list.appendChild(row);
       });
       document.getElementById('emptyOutputs').classList.toggle('hidden', outputs.length > 0);
@@ -522,9 +800,23 @@
         updateCard(state, element);
       });
       syncPayload();
+      renderMergeBoard();
       renderOutputs();
       updatePlayheads();
     }
+    document.getElementById('addOutputGroup').addEventListener('click', () => {
+      const used = mergeItems().map(({item}) => Number(item.output_group) || 1);
+      const extra = [...extraOutputGroups];
+      const next = Math.min(99, Math.max(0, ...used, ...extra) + 1);
+      extraOutputGroups.add(next);
+      renderMergeBoard();
+    });
+    document.getElementById('splitAllOutputs').addEventListener('click', () => {
+      extraOutputGroups.clear();
+      mergeItems().forEach((entry, index) => { entry.item.output_group = index + 1; });
+      selectedMergeItem = null;
+      renderAll();
+    });
     function updatePlayheads() {
       const current = finite(player.currentTime);
       if (current === null) return;
@@ -560,21 +852,26 @@
     document.getElementById('portraitForm').addEventListener('submit', event => {
       const invalidInput = document.querySelector('.invalid');
       const invalidWindow = states.find(state => state.enabled && !state.subsegments.length);
-      if (invalidInput || invalidWindow) {
+      const missingCoverGroup = [...new Set(mergeItems().map(({item}) => Math.max(1, Number(item.output_group) || 1)))].find(group => !outputCovers.has(group));
+      if (invalidInput || invalidWindow || missingCoverGroup) {
         event.preventDefault();
         const error = document.getElementById('formError');
         error.textContent = invalidInput
           ? '存在超出固定窗口范围或起止顺序错误的时间，请修正后提交。'
-          : `窗口 #${invalidWindow.window_idx + 1} 已启用但没有有效区间，请新增区间、整段保留或切换为跳过。`;
+          : invalidWindow
+            ? `窗口 #${invalidWindow.window_idx + 1} 已启用但没有有效区间，请新增区间、整段保留或切换为跳过。`
+            : `成品盒 #${missingCoverGroup} 尚未选择封面，请定位播放器画面后点击“使用当前画面”。`;
         error.classList.remove('hidden');
         return;
       }
       syncPayload();
+      syncCoversPayload();
       syncRegionsPayload();
       document.getElementById('loading').classList.add('active');
     });
     renderAll();
     updateFloatingPreview();
   </script>
+  <script src="/static/processing-state.js"></script>
 </body>
 </html>

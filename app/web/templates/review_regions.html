@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>区域审核 · {{ job_id }}</title>
   <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+  <link rel="stylesheet" href="/static/processing-state.css">
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif; }
     .hero-grad { background: linear-gradient(135deg, #06b6d4 0%, #22d3ee 25%, #c084fc 60%, #f0abfc 80%, #ec4899 100%); background-attachment: fixed; }
@@ -196,7 +197,7 @@
 
       <div class="flex flex-wrap items-center gap-4 pt-4 border-t border-slate-200">
         <label class="flex items-center gap-2 text-sm text-slate-700 cursor-pointer select-none"><input type="checkbox" name="skip_detect" id="skip_detect" class="w-4 h-4 rounded accent-pink-500"> 跳过所有 Logo / 蒙版模糊处理</label>
-        <button id="submitBtn" class="ml-auto btn-tea px-6 py-2 rounded-xl font-semibold text-white shadow-md transition transform hover:scale-[1.02] hover:shadow-lg active:scale-95">
+        <button id="submitBtn" type="submit" data-processing-text="提交中…" class="ml-auto btn-tea px-6 py-2 rounded-xl font-semibold text-white shadow-md transition transform hover:scale-[1.02] hover:shadow-lg active:scale-95">
           {% if state.mode == 'portrait' %}确认并开始人物识别{% else %}确认并编辑全部固定窗口{% endif %} →
         </button>
       </div>
@@ -513,5 +514,6 @@
   </script>
 
   <div id="loadingMask" class="loading-mask"><div class="spinner"></div><div class="msg">正在提交，请稍候…</div></div>
+  <script src="/static/processing-state.js"></script>
 </body>
 </html>

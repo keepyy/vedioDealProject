@@ -15,3 +15,10 @@ storage/
 
 .DS_Store
 Thumbs.db
+
+# Android local build tools and generated files
+.android-build-tools/
+android-app/.gradle/
+android-app/**/build/
+android-app/local.properties
+dist/*.apk

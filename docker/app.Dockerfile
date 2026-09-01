@@ -10,8 +10,14 @@ ENV YOLO_CONFIG_DIR=/tmp/Ultralytics
 RUN sed -i 's|http://archive.ubuntu.com/ubuntu/|http://mirrors.aliyun.com/ubuntu/|g; s|http://security.ubuntu.com/ubuntu/|http://mirrors.aliyun.com/ubuntu/|g' /etc/apt/sources.list \
     && apt-get update \
     && apt-get install -y --no-install-recommends \
-        software-properties-common ca-certificates curl ffmpeg fonts-noto-cjk \
+        software-properties-common aria2 ca-certificates curl ffmpeg fonts-noto-cjk unzip \
         libgl1 libglib2.0-0 libsm6 libxext6 libxrender1 \
+    && curl -fsSLO https://issuecdn.baidupcs.com/issue/netdisk/ai-bdpan/installer/3.8.4/bdpan-installer-linux-amd64 \
+    && echo '02050e9a5ed5c5ddc314bf920c103238a669366a130e3bd43a125d83fdd00548  bdpan-installer-linux-amd64' | sha256sum -c - \
+    && chmod +x bdpan-installer-linux-amd64 \
+    && ./bdpan-installer-linux-amd64 --yes \
+    && install -m 0755 /root/.local/bin/bdpan /usr/local/bin/bdpan \
+    && rm -f bdpan-installer-linux-amd64 \
     && add-apt-repository -y ppa:deadsnakes/ppa \
     && apt-get update \
     && apt-get install -y --no-install-recommends python3.11 python3.11-venv python3.11-dev \

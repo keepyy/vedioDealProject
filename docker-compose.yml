@@ -40,7 +40,7 @@ services:
       - ./.env:/app/.env:ro
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
-      - NVIDIA_DRIVER_CAPABILITIES=compute,video,utility
+      - NVIDIA_DRIVER_CAPABILITIES=all
       # 一键关闭 ffmpeg GPU 加速（=1 时强制走 CPU libx264 + 软解）
       - DISABLE_HWACCEL=0
       - SANDBOX_ENABLED=false
@@ -60,7 +60,8 @@ services:
     image: nginx:alpine
     container_name: vedio-agent-nginx
     ports:
-      - "8080:80"
+      # 绑定所有网卡，局域网设备可通过 http://本机IP:${LAN_PORT:-8080} 访问
+      - "0.0.0.0:${LAN_PORT:-8080}:80"
     volumes:
       - ./docker/nginx.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:

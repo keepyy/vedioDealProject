@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>茶辑</title>
   <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+  <link rel="stylesheet" href="/static/processing-state.css">
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif; }
     .hero-grad { background: linear-gradient(135deg, #06b6d4 0%, #22d3ee 25%, #c084fc 60%, #f0abfc 80%, #ec4899 100%); background-attachment: fixed; }
@@ -179,8 +180,9 @@
     .submit-progress.error .sp-fill { background: linear-gradient(to right, #ef4444, #f97316); }
     .submit-progress.error .sp-row { color: #b91c1c; }
     /* 禁用表单内控件时的视觉样式（只作用于当前 form，不影响其他页面元素） */
-    form.submitting input, form.submitting select, form.submitting textarea, form.submitting button { opacity: .55 !important; cursor: not-allowed !important; }
-    form.submitting button { pointer-events: none; }
+    form.submitting input, form.submitting select, form.submitting textarea { opacity: .55 !important; cursor: not-allowed !important; }
+    form.submitting button { cursor: not-allowed !important; pointer-events: none; }
+    form.submitting button:not(.is-processing) { opacity: .72 !important; }
     form.submitting .dropzone, form.submitting input[type="file"], form.submitting input[type="checkbox"], form.submitting input[type="radio"] { pointer-events: none !important; opacity: .55 !important; }
     form.submitting input:not([type="file"]):not([type="checkbox"]):not([type="radio"]), form.submitting textarea, form.submitting select { pointer-events: none !important; background: rgba(226,232,240,.6) !important; }
     /* 全局 loading 遮罩（保留给其他页面使用） */
@@ -205,6 +207,68 @@
       text-shadow: 0 1px 4px rgba(0,0,0,0.35);
     }
     @keyframes spin { to { transform: rotate(360deg); } }
+    .task-popover {
+      overflow: hidden;
+      background: linear-gradient(145deg, rgba(255,255,255,.94), rgba(236,254,255,.91) 45%, rgba(250,232,255,.92));
+      border: 2px solid rgba(255,255,255,.78);
+      border-radius: 24px 24px 24px 10px;
+      box-shadow: 0 18px 45px rgba(88,28,135,.22), inset 0 1px 0 rgba(255,255,255,.92);
+      backdrop-filter: blur(18px) saturate(135%);
+      -webkit-backdrop-filter: blur(18px) saturate(135%);
+      transform-origin: top right;
+      animation: task-pop-in .18s ease-out;
+    }
+    .task-popover::before,
+    .task-popover::after {
+      content: "";
+      position: absolute;
+      border-radius: 999px;
+      pointer-events: none;
+    }
+    .task-popover::before {
+      width: 92px; height: 92px; right: -34px; top: -38px;
+      background: rgba(34,211,238,.18);
+      border: 1px solid rgba(255,255,255,.5);
+    }
+    .task-popover::after {
+      width: 58px; height: 58px; left: -22px; bottom: -25px;
+      background: rgba(244,114,182,.16);
+      border: 1px solid rgba(255,255,255,.45);
+    }
+    .task-summary {
+      position: relative;
+      z-index: 1;
+      padding: 10px 12px;
+      border-radius: 14px 14px 14px 5px;
+      color: #475569;
+      font-weight: 700;
+      background: linear-gradient(110deg, rgba(103,232,249,.28), rgba(216,180,254,.28));
+      border: 1px solid rgba(255,255,255,.78);
+    }
+    .task-item {
+      position: relative;
+      z-index: 1;
+      border: 1px solid rgba(255,255,255,.8);
+      background: rgba(255,255,255,.62);
+      box-shadow: 0 4px 12px rgba(99,102,241,.08);
+      transition: transform .16s ease, background .16s ease, box-shadow .16s ease;
+    }
+    .task-item:hover {
+      transform: translateX(-3px) rotate(-.35deg);
+      background: rgba(236,254,255,.9);
+      box-shadow: 0 7px 16px rgba(6,182,212,.16);
+    }
+    .task-all-link {
+      position: relative;
+      z-index: 1;
+      border-radius: 999px;
+      background: linear-gradient(90deg, #06b6d4, #8b5cf6, #ec4899);
+      box-shadow: 0 6px 16px rgba(139,92,246,.23);
+    }
+    @keyframes task-pop-in {
+      from { opacity: 0; transform: translateY(-6px) scale(.94) rotate(1deg); }
+      to { opacity: 1; transform: translateY(0) scale(1) rotate(0); }
+    }
   </style>
 </head>
 <body class="min-h-screen text-slate-800 hero-grad">
@@ -214,17 +278,65 @@
       <div class="tea-icon shrink-0"><img src="/static/logo.png" alt="茶辑"></div>
       <span class="font-bold text-lg text-tea">茶辑</span>
       <nav class="ml-auto flex items-center gap-1.5 text-sm">
+        <div id="accountNav" class="relative">
+          {% if current_user %}
+          <a href="/account" id="accountNavButton" class="block px-3 py-1.5 rounded-lg bg-white/15 text-white hover:bg-white/25 transition">{{ current_user.username }}</a>
+          <div id="accountPopover" class="hidden absolute right-0 top-full pt-3 w-64 text-slate-700">
+            <div class="rounded-2xl border border-white/70 bg-white/95 p-4 shadow-2xl backdrop-blur-xl">
+            <div class="font-bold text-slate-800">{{ current_user.username }}</div>
+            <div class="mt-1 text-xs text-slate-500">用户 ID：{{ current_user.id }}</div>
+            <div class="mt-1 text-xs text-slate-500">手机号：{{ current_user.phone or '尚未绑定' }}</div>
+            {% if not current_user.phone %}<button type="button" id="showBindPhoneButton" class="mt-3 w-full rounded-xl bg-cyan-50 py-2 text-xs font-bold text-cyan-700">绑定手机号</button>{% endif %}
+            <button type="button" id="systemLogoutButton" class="mt-2 w-full rounded-xl bg-rose-50 py-2 text-xs font-bold text-rose-600">退出系统</button>
+            </div>
+          </div>
+          {% else %}
+          <button type="button" id="showSystemAuthButton" class="px-3 py-1.5 rounded-lg bg-white/20 text-white hover:bg-white/30 transition">{{ identity.username }} · 登录</button>
+          {% endif %}
+        </div>
         <a href="/" class="px-3 py-1.5 rounded-lg text-white/85 hover:text-white hover:bg-white/20 transition">首页</a>
-        <a href="/tasks" class="px-3 py-1.5 rounded-lg text-white/85 hover:text-white hover:bg-white/20 transition">任务列表</a>
+        <div id="taskNav" class="relative">
+          <a href="/tasks" id="taskNavLink" class="block px-3 py-1.5 rounded-lg text-white/85 hover:text-white hover:bg-white/20 transition">任务列表</a>
+          <div id="taskPopover" class="task-popover hidden absolute right-0 top-full mt-3 w-80 max-w-[88vw] text-slate-700 p-4 z-50">
+            <div id="taskSummary" class="task-summary text-xs">正在加载任务情况…</div>
+            <div id="taskItems" class="relative z-[1] mt-2.5 space-y-2"></div>
+          </div>
+        </div>
       </nav>
     </div>
   </header>
 
+  <div id="systemAuthModal" class="hidden fixed inset-0 z-[90] place-items-center bg-slate-950/55 p-4 backdrop-blur-sm">
+    <div class="w-full max-w-md rounded-3xl border border-white/70 bg-white/95 p-6 shadow-2xl">
+      <div class="flex items-center justify-between gap-3">
+        <div><h2 class="text-xl font-black text-slate-800">剪辑系统账号</h2><p class="mt-1 text-xs text-slate-500">登录后，百度授权和剪辑数据将绑定到你的用户 ID。</p></div>
+        <button type="button" id="closeSystemAuthButton" class="text-2xl text-slate-400">×</button>
+      </div>
+      <div class="mt-5 flex gap-2 rounded-xl bg-slate-100 p-1">
+        <button type="button" data-auth-mode="login" class="system-auth-tab flex-1 rounded-lg bg-cyan-600 py-2 text-sm font-bold text-white">密码登录</button>
+        <button type="button" data-auth-mode="phone" class="system-auth-tab flex-1 rounded-lg py-2 text-sm font-bold text-slate-600">验证码登录</button>
+        <button type="button" data-auth-mode="register" class="system-auth-tab flex-1 rounded-lg py-2 text-sm font-bold text-slate-600">注册</button>
+      </div>
+      <form id="systemAuthForm" class="mt-4 space-y-3">
+        <input id="systemUsername" required minlength="3" maxlength="24" autocomplete="username" placeholder="用户名或手机号" class="w-full rounded-xl border border-slate-300 px-4 py-3 focus:ring-2 focus:ring-cyan-400 focus:outline-none">
+        <input id="systemPhone" type="tel" maxlength="11" autocomplete="tel" placeholder="手机号" class="hidden w-full rounded-xl border border-slate-300 px-4 py-3 focus:ring-2 focus:ring-cyan-400 focus:outline-none">
+        <div id="systemCodeRow" class="hidden flex gap-2"><input id="systemCode" inputmode="numeric" maxlength="6" placeholder="短信验证码" class="min-w-0 flex-1 rounded-xl border border-slate-300 px-4 py-3 focus:ring-2 focus:ring-cyan-400 focus:outline-none"><button type="button" id="sendSystemCode" class="rounded-xl bg-cyan-50 px-4 text-sm font-bold text-cyan-700">获取验证码</button></div>
+        <input id="systemPassword" type="password" required minlength="8" maxlength="128" autocomplete="current-password" placeholder="密码（至少8位）" class="w-full rounded-xl border border-slate-300 px-4 py-3 focus:ring-2 focus:ring-cyan-400 focus:outline-none">
+        <p class="text-xs text-amber-600">当前为开发测试模式，验证码固定为 123456。</p>
+        <p id="systemAuthError" class="hidden text-xs font-medium text-red-600"></p>
+        <button type="submit" class="w-full rounded-xl bg-gradient-to-r from-cyan-500 to-violet-500 py-3 font-bold text-white shadow">继续</button>
+      </form>
+    </div>
+  </div>
+
+  <div id="baiduAuthModal" class="hidden fixed inset-0 z-[95] place-items-center bg-slate-950/55 p-4 backdrop-blur-sm"><div class="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl"><div class="flex justify-between"><div><h2 id="baiduAuthTitle" class="text-xl font-black">授权百度网盘</h2><p id="baiduAuthSubtitle" class="mt-1 text-xs text-slate-500">当前剪辑账号尚未保存有效授权。</p></div><button type="button" id="closeBaiduAuth" class="text-2xl text-slate-400">×</button></div><div id="baiduSwitchNotice" class="hidden mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-xs leading-relaxed text-amber-800">该链接由当前百度账号创建，百度禁止自己转存自己的分享。请在百度页面退出当前账号并登录另一个百度账号后授权。</div><p class="mt-5 text-sm text-slate-600">在百度官方页面确认后，将页面显示的授权码粘贴到此弹窗。授权码不会显示在首页，也不会保存。</p><a id="baiduAuthLink" target="_blank" rel="noopener noreferrer" class="mt-4 block rounded-xl bg-blue-600 py-3 text-center font-bold text-white">前往百度确认授权</a><input id="baiduAuthCode" type="password" maxlength="32" autocomplete="off" placeholder="粘贴本次授权页面的新32位授权码" class="mt-3 w-full rounded-xl border border-slate-300 px-4 py-3"><button type="button" id="baiduCompleteButton" class="mt-3 w-full rounded-xl bg-emerald-600 py-3 font-bold text-white">完成授权并导入分享视频</button><button type="button" id="refreshBaiduAuthLink" class="mt-2 w-full py-2 text-sm font-bold text-blue-600">重新获取授权链接</button><p id="baiduAuthError" class="hidden mt-3 text-xs text-red-600"></p></div></div>
+
+  <div id="bindPhoneModal" class="hidden fixed inset-0 z-[95] place-items-center bg-slate-950/55 p-4 backdrop-blur-sm"><div class="w-full max-w-sm rounded-3xl bg-white p-6 shadow-2xl"><div class="flex justify-between"><h2 class="text-xl font-black">绑定手机号</h2><button type="button" id="closeBindPhone" class="text-2xl text-slate-400">×</button></div><input id="bindPhone" maxlength="11" placeholder="手机号" class="mt-5 w-full rounded-xl border border-slate-300 px-4 py-3"><div class="mt-3 flex gap-2"><input id="bindCode" maxlength="6" placeholder="验证码" class="min-w-0 flex-1 rounded-xl border border-slate-300 px-4 py-3"><button type="button" id="sendBindCode" class="rounded-xl bg-cyan-50 px-4 font-bold text-cyan-700">获取验证码</button></div><p class="mt-2 text-xs text-amber-600">开发验证码固定为 123456。</p><p id="bindPhoneError" class="hidden mt-2 text-xs text-red-600"></p><button type="button" id="confirmBindPhone" class="mt-4 w-full rounded-xl bg-gradient-to-r from-cyan-500 to-violet-500 py-3 font-bold text-white">确认绑定</button></div></div>
+
   <main class="max-w-3xl mx-auto px-6 py-10 space-y-8">
     <!-- Hero -->
     <section class="text-center">
-      <h1 class="text-4xl md:text-5xl font-extrabold tracking-tight text-tea-dark drop-shadow-sm">茶辑</h1>
-      <p class="mt-3 text-sm md:text-base text-orange-light font-medium">上传视频，选择人物识别或固定时长分割，逐段审核后本地下载。</p>
+      <p class="text-sm md:text-base text-orange-light font-medium">上传视频，在完整时间条自由选择不连续片段，可按需分别生成或合成为视频。</p>
     </section>
 
     {% if can_accept is defined and not can_accept %}
@@ -239,8 +351,14 @@
     </div>
     {% endif %}
 
-    <!-- 单一剪辑表单 -->
-    <form id="clipForm" method="post" action="/upload" enctype="multipart/form-data" class="bg-card-ip rounded-2xl shadow-xl p-6 md:p-8 space-y-6">
+    <!-- 视频来源标签 -->
+    <section class="bg-card-ip rounded-2xl shadow-xl p-6 md:p-8">
+      <div class="flex gap-2 mb-6 p-1 rounded-xl bg-white/50">
+        <button type="button" data-source-tab="file" class="source-tab flex-1 py-2.5 rounded-lg font-semibold bg-cyan-600 text-white shadow">上传视频</button>
+        <button type="button" data-source-tab="baidu" class="source-tab flex-1 py-2.5 rounded-lg font-semibold text-slate-600">百度网盘</button>
+        <button type="button" data-source-tab="url" class="source-tab flex-1 py-2.5 rounded-lg font-semibold text-slate-600">直接链接</button>
+      </div>
+    <form id="clipForm" data-source-panel="file" method="post" action="/upload" enctype="multipart/form-data" class="space-y-6">
       <div>
         <label class="block text-sm font-semibold text-slate-700 mb-2">① 上传视频（最长 {{ max_minutes }} 分钟，≤ {{ max_mb }}MB）</label>
         <div class="dropzone cursor-pointer rounded-xl border-2 border-dashed border-slate-300 bg-slate-50/60 hover:border-pink-400 transition px-6 py-8 text-center" data-target="clipVideo">
@@ -250,7 +368,7 @@
           </svg>
           <p class="text-sm text-slate-600">拖拽视频到此处，或<span class="text-pink-600 font-semibold">点击选择文件</span></p>
           <p class="text-xs text-slate-400 mt-1" data-label>支持 mp4 / mov / mkv / avi / flv / webm / m4v</p>
-          <input type="file" name="video" accept="video/*" required class="hidden" id="clipVideo">
+          <input type="file" name="video" accept=".mp4,.mov,.mkv,.avi,.flv,.webm,.m4v,.rm,.rmvb,video/*" required class="hidden" id="clipVideo">
         </div>
       </div>
 
@@ -262,12 +380,8 @@
         <p id="portraitHint" class="mt-2 ml-8 text-sm text-slate-600">可随时开启或关闭；开启后将自动识别主要人物并供人工选择。</p>
       </div>
 
-      <div id="fixedDurationFields" class="rounded-xl border border-white/60 bg-white/30 p-4">
-        <label class="block text-sm font-semibold text-slate-700 mb-2">② 固定时长窗口（分钟）</label>
-        <div class="flex flex-wrap items-center gap-3">
-          <input type="number" id="segmentMinutes" name="segment_minutes" value="{{ default_segment }}" min="1" max="180" required class="w-32 px-3 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-cyan-400 focus:outline-none">
-          <span class="text-sm text-slate-500">分钟（默认 {{ default_segment }}）</span>
-        </div>
+      <div class="rounded-xl border border-white/60 bg-white/30 p-4 text-sm text-slate-600">
+        ② 上传后在完整视频时间条上自由添加多个区间；区间可以不连续，也可以选择将多个区间合成为同一个成品。
       </div>
 
       <button type="submit" class="btn-tea w-full py-3 rounded-xl font-semibold text-white shadow-md transition transform hover:scale-[1.01] hover:shadow-lg active:scale-95">开始剪辑 →</button>
@@ -276,6 +390,41 @@
         <div class="sp-bar"><div class="sp-fill"></div></div>
       </div>
     </form>
+
+    <form id="baiduFileForm" data-source-panel="baidu" method="post" action="/upload-baidu-file" class="hidden space-y-4">
+      <div>
+        <h2 class="font-bold text-tea">从已授权的百度网盘选择视频</h2>
+        <p class="mt-1 text-xs text-slate-500">完成百度网盘授权后，浏览授权范围内的目录，选择一个视频下载到系统剪辑目录。</p>
+      </div>
+      {% if not current_user %}
+      <div class="rounded-xl border border-amber-200 bg-amber-50/80 px-4 py-3 text-sm text-amber-800">
+        请先登录剪辑系统账号，再授权自己的百度网盘。
+        <button type="button" id="inlineSystemAuthButton" class="ml-2 font-bold underline">立即登录</button>
+      </div>
+      {% endif %}
+      <div class="rounded-2xl border border-blue-100 bg-blue-50/70 p-4">
+        <div class="flex items-center justify-between gap-3"><p id="baiduFileHint" class="text-sm text-slate-600">正在检查百度网盘授权…</p><button type="button" id="authorizeBaiduButton" data-processing-text="正在获取授权…" class="shrink-0 rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white">授权百度网盘</button></div>
+      </div>
+      <div id="baiduBrowser" class="hidden overflow-hidden rounded-2xl border border-white/70 bg-white/55">
+        <div class="flex items-center gap-2 border-b border-white/70 p-3"><button type="button" id="baiduParentButton" class="rounded-lg bg-slate-100 px-3 py-2 text-sm font-bold text-slate-600">返回上级</button><span class="min-w-0 flex-1 truncate text-xs text-slate-500">我的应用数据/bdpan/<span id="baiduCurrentPath"></span></span><button type="button" id="refreshBaiduFiles" data-processing-text="正在刷新…" class="rounded-lg bg-cyan-50 px-3 py-2 text-sm font-bold text-cyan-700">刷新</button></div>
+        <div id="baiduFileList" class="max-h-72 space-y-2 overflow-y-auto p-3"></div>
+      </div>
+      <input type="hidden" name="remote_path" id="baiduRemotePath">
+      <input type="hidden" name="total_bytes" id="baiduTotalBytes" value="0">
+      <div id="baiduSelectedFile" class="hidden rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800"></div>
+      <div id="baiduDownloadProgress" class="hidden space-y-2 rounded-xl bg-slate-100/80 px-4 py-3"><div class="flex justify-between text-xs font-semibold text-slate-600"><span id="baiduDownloadText">准备下载…</span><span id="baiduDownloadPercent"></span></div><div class="h-2 overflow-hidden rounded-full bg-slate-200"><div id="baiduDownloadBar" class="h-full w-0 rounded-full bg-cyan-500 transition-all"></div></div></div>
+      <label class="flex items-center gap-3 text-sm font-semibold text-slate-700 cursor-pointer select-none"><input type="checkbox" name="portrait_detection" class="w-5 h-5 rounded accent-pink-500">启用人物识别</label>
+      <button id="importBaiduFileButton" type="submit" data-processing-text="正在下载并创建任务…" disabled class="btn-tea w-full py-3 rounded-xl font-semibold text-white shadow-md disabled:cursor-not-allowed disabled:opacity-40">下载所选视频并开始剪辑 →</button>
+    </form>
+
+    <form id="directUrlForm" data-source-panel="url" method="post" action="/upload-url" class="hidden space-y-4">
+      <div><h2 class="font-bold text-tea">通过直接资源链接导入视频</h2><p class="mt-1 text-xs text-slate-500">适用于无需账号授权即可直接访问的视频资源链接；百度网盘链接请使用“百度网盘”来源。</p></div>
+      <div><label for="directVideoUrl" class="mb-2 block text-sm font-semibold text-slate-700">视频资源链接</label><input id="directVideoUrl" name="video_url" type="url" required placeholder="https://example.com/video.mp4" class="w-full rounded-xl border border-slate-300 bg-white/80 px-4 py-3 focus:outline-none focus:ring-2 focus:ring-cyan-400"></div>
+      <p id="directUrlHint" class="text-sm text-slate-500">系统将下载资源到剪辑目录并创建任务。</p>
+      <label class="flex items-center gap-3 text-sm font-semibold text-slate-700 cursor-pointer select-none"><input type="checkbox" name="portrait_detection" class="w-5 h-5 rounded accent-pink-500">启用人物识别</label>
+      <button id="importDirectUrlButton" type="submit" data-processing-text="正在下载并创建任务…" class="btn-tea w-full py-3 rounded-xl font-semibold text-white shadow-md">导入直接链接并开始剪辑 →</button>
+    </form>
+    </section>
 
     <!-- 底部功能说明 -->
     <section class="feature-section space-y-3">
@@ -312,15 +461,325 @@
     </footer>
   </main>
 
+  <script src="/static/processing-state.js"></script>
   <script>
+    const taskNav = document.getElementById('taskNav');
+    const taskNavLink = document.getElementById('taskNavLink');
+    const taskPopover = document.getElementById('taskPopover');
+    async function showTaskPopover(){
+      taskPopover.classList.remove('hidden');
+      try {
+        const response = await fetch('/api/tasks/summary', {cache: 'no-store'});
+        const data = await response.json();
+        document.getElementById('taskSummary').textContent = `处理中 ${data.processing_count} · 已完成 ${data.completed_count} · 失败 ${data.failed_count}`;
+        const items = document.getElementById('taskItems');
+        items.replaceChildren();
+        data.jobs.slice(0, 5).forEach(job => {
+          const link = document.createElement('a');
+          link.href = job.url;
+          link.className = 'task-item flex cursor-pointer items-center justify-between gap-2 rounded-xl px-3 py-2.5 text-xs';
+          link.dataset.taskUrl = job.url;
+          link.innerHTML = `<span class="truncate font-medium text-slate-600">${job.job_id}</span><span class="shrink-0 rounded-full bg-white/70 px-2 py-1 font-bold text-violet-600">${job.status_label}</span>`;
+          items.appendChild(link);
+        });
+        if (!data.jobs.length) items.textContent = '暂无任务';
+      } catch (_) {
+        document.getElementById('taskSummary').textContent = '任务情况加载失败，点击进入任务列表查看。';
+      }
+    }
+    let taskPopoverHideTimer = null;
+    taskNav.addEventListener('mouseenter', () => {
+      clearTimeout(taskPopoverHideTimer);
+      showTaskPopover();
+    });
+    taskNav.addEventListener('mouseleave', () => {
+      taskPopoverHideTimer = setTimeout(() => taskPopover.classList.add('hidden'), 260);
+    });
+    taskPopover.addEventListener('mouseenter', () => clearTimeout(taskPopoverHideTimer));
+    taskPopover.addEventListener('mouseleave', () => {
+      taskPopoverHideTimer = setTimeout(() => taskPopover.classList.add('hidden'), 180);
+    });
+    taskPopover.addEventListener('click', event => {
+      const taskItem = event.target.closest('[data-task-url]');
+      if (!taskItem) return;
+      event.preventDefault();
+      event.stopPropagation();
+      window.location.assign(taskItem.dataset.taskUrl);
+    });
+    taskNavLink.addEventListener('click', event => {
+      if (window.matchMedia('(hover: none)').matches && taskPopover.classList.contains('hidden')) {
+        event.preventDefault(); showTaskPopover();
+      }
+    });
+    document.addEventListener('pointerdown', event => {
+      if (!taskNav.contains(event.target)) taskPopover.classList.add('hidden');
+    });
+
+    const systemAuthModal = document.getElementById('systemAuthModal');
+    const systemAuthForm = document.getElementById('systemAuthForm');
+    let systemAuthMode = 'login';
+    function openSystemAuth(){
+      systemAuthModal.classList.remove('hidden');
+      systemAuthModal.classList.add('grid');
+    }
+    function closeSystemAuth(){
+      systemAuthModal.classList.add('hidden');
+      systemAuthModal.classList.remove('grid');
+    }
+    document.getElementById('showSystemAuthButton')?.addEventListener('click', openSystemAuth);
+    document.getElementById('inlineSystemAuthButton')?.addEventListener('click', openSystemAuth);
+    document.getElementById('closeSystemAuthButton').addEventListener('click', closeSystemAuth);
+    const systemUsername = document.getElementById('systemUsername');
+    const systemPhone = document.getElementById('systemPhone');
+    const systemCodeRow = document.getElementById('systemCodeRow');
+    const systemCode = document.getElementById('systemCode');
+    const systemPassword = document.getElementById('systemPassword');
+    function syncSystemAuthMode(){
+      const registering = systemAuthMode === 'register';
+      const phoneLogin = systemAuthMode === 'phone';
+      const binding = systemAuthMode === 'bind';
+      systemUsername.placeholder = registering ? '用户名（3-24位）' : ((phoneLogin || binding) ? '手机号' : '用户名或手机号');
+      systemUsername.classList.toggle('hidden', binding);
+      systemPhone.classList.toggle('hidden', !(registering || binding));
+      systemCodeRow.classList.toggle('hidden', !(registering || phoneLogin || binding));
+      systemPassword.classList.toggle('hidden', phoneLogin || binding);
+      systemPassword.required = !(phoneLogin || binding);
+      systemPassword.autocomplete = registering ? 'new-password' : 'current-password';
+    }
+    document.querySelectorAll('[data-auth-mode]').forEach(tab => tab.addEventListener('click', () => {
+      systemAuthMode = tab.dataset.authMode;
+      document.querySelectorAll('[data-auth-mode]').forEach(item => {
+        const active = item.dataset.authMode === systemAuthMode;
+        item.classList.toggle('bg-cyan-600', active);
+        item.classList.toggle('text-white', active);
+        item.classList.toggle('text-slate-600', !active);
+      });
+      syncSystemAuthMode();
+    }));
+    document.getElementById('sendSystemCode').addEventListener('click', async () => {
+      const phone = (systemAuthMode === 'register' || systemAuthMode === 'bind') ? systemPhone.value.trim() : systemUsername.value.trim();
+      const response = await fetch('/auth/sms-code', {method: 'POST', body: new URLSearchParams({phone})});
+      const data = await response.json();
+      const error = document.getElementById('systemAuthError');
+      error.textContent = response.ok ? `开发验证码：${data.development_code}` : data.detail;
+      error.classList.remove('hidden');
+    });
+    systemAuthForm.addEventListener('submit', async event => {
+      event.preventDefault();
+      const error = document.getElementById('systemAuthError');
+      error.classList.add('hidden');
+      let path = '/auth/login';
+      let body;
+      if (systemAuthMode === 'register') {
+        path = '/auth/register';
+        body = new URLSearchParams({username: systemUsername.value.trim(), phone: systemPhone.value.trim(), code: systemCode.value.trim(), password: systemPassword.value});
+      } else if (systemAuthMode === 'bind') {
+        path = '/auth/bind-phone';
+        body = new URLSearchParams({phone: systemPhone.value.trim(), code: systemCode.value.trim()});
+      } else {
+        body = new URLSearchParams({account: systemUsername.value.trim(), password: systemAuthMode === 'login' ? systemPassword.value : '', phone_code: systemAuthMode === 'phone' ? systemCode.value.trim() : ''});
+      }
+      const response = await fetch(path, {method: 'POST', body});
+      const data = await response.json();
+      if (!response.ok) {
+        error.textContent = data.detail || '操作失败'; error.classList.remove('hidden'); return;
+      }
+      window.location.reload();
+    });
+    syncSystemAuthMode();
+    document.getElementById('systemLogoutButton')?.addEventListener('click', async () => {
+      await fetch('/auth/logout', {method: 'POST'});
+      window.location.reload();
+    });
+    const accountNav = document.getElementById('accountNav');
+    const accountPopover = document.getElementById('accountPopover');
+    if (accountPopover) {
+      let accountCloseTimer;
+      const openAccountPopover = () => {
+        window.clearTimeout(accountCloseTimer);
+        accountPopover.classList.remove('hidden');
+      };
+      const scheduleAccountClose = () => {
+        window.clearTimeout(accountCloseTimer);
+        accountCloseTimer = window.setTimeout(() => accountPopover.classList.add('hidden'), 220);
+      };
+      accountNav.addEventListener('mouseenter', openAccountPopover);
+      accountNav.addEventListener('mouseleave', scheduleAccountClose);
+      accountPopover.addEventListener('mouseenter', openAccountPopover);
+      document.getElementById('accountNavButton')?.addEventListener('click', event => {
+        if (window.matchMedia('(hover: none)').matches && accountPopover.classList.contains('hidden')) {
+          event.preventDefault(); accountPopover.classList.remove('hidden');
+        }
+      });
+      document.addEventListener('pointerdown', event => {
+        if (!accountNav.contains(event.target)) accountPopover.classList.add('hidden');
+      });
+    }
+    const bindPhoneModal=document.getElementById('bindPhoneModal');
+    const closeBindPhone=()=>{bindPhoneModal.classList.add('hidden');bindPhoneModal.classList.remove('grid');};
+    document.getElementById('closeBindPhone').addEventListener('click',closeBindPhone);
+    document.getElementById('showBindPhoneButton')?.addEventListener('click', () => {
+      accountPopover.classList.add('hidden');bindPhoneModal.classList.remove('hidden');bindPhoneModal.classList.add('grid');
+    });
+    document.getElementById('sendBindCode').addEventListener('click',async()=>{
+      const phone=document.getElementById('bindPhone').value.trim();const response=await fetch('/auth/sms-code',{method:'POST',body:new URLSearchParams({phone})});const data=await response.json();const error=document.getElementById('bindPhoneError');error.textContent=response.ok?`开发验证码：${data.development_code}`:data.detail;error.classList.remove('hidden');
+    });
+    document.getElementById('confirmBindPhone').addEventListener('click',async()=>{
+      const body=new URLSearchParams({phone:document.getElementById('bindPhone').value.trim(),code:document.getElementById('bindCode').value.trim()});const response=await fetch('/auth/bind-phone',{method:'POST',body});const data=await response.json();if(response.ok){location.reload();return;}const error=document.getElementById('bindPhoneError');error.textContent=data.detail;error.classList.remove('hidden');
+    });
+
+    document.querySelectorAll('[data-source-tab]').forEach(tab => tab.addEventListener('click', () => {
+      const selected = tab.dataset.sourceTab;
+      document.querySelectorAll('[data-source-panel]').forEach(panel => panel.classList.toggle('hidden', panel.dataset.sourcePanel !== selected));
+      document.querySelectorAll('[data-source-tab]').forEach(item => {
+        const active = item.dataset.sourceTab === selected;
+        item.classList.toggle('bg-cyan-600', active);
+        item.classList.toggle('text-white', active);
+        item.classList.toggle('shadow', active);
+        item.classList.toggle('text-slate-600', !active);
+      });
+    }));
+    const baiduAuthModal = document.getElementById('baiduAuthModal');
+    const baiduAuthLink = document.getElementById('baiduAuthLink');
+    const baiduAuthCode = document.getElementById('baiduAuthCode');
+    const baiduAuthError = document.getElementById('baiduAuthError');
+    let pendingBaiduBrowse = false;
+    let baiduAuthenticated = false;
+    let currentBaiduPath = '';
+    function showBaiduAuthError(message){baiduAuthError.textContent=message;baiduAuthError.classList.toggle('hidden',!message);}
+    function closeBaiduModal(){baiduAuthModal.classList.add('hidden');baiduAuthModal.classList.remove('grid');}
+    document.getElementById('closeBaiduAuth').addEventListener('click', closeBaiduModal);
+    async function openBaiduAuthorization(switchAccount=false,openAuthPage=false){
+      showBaiduAuthError('');baiduAuthCode.value='';
+      const authWindow=openAuthPage?window.open('about:blank','baiduOAuth'):null;
+      const completeButton=document.getElementById('baiduCompleteButton');completeButton.disabled=false;completeButton.textContent='完成授权并选择网盘视频';
+      document.getElementById('baiduAuthTitle').textContent=switchAccount?'重新授权百度网盘':'授权百度网盘';
+      document.getElementById('baiduAuthSubtitle').textContent='正在生成新的百度授权链接…';
+      document.getElementById('baiduSwitchNotice').classList.add('hidden');
+      const response=await fetch('/api/baidu-auth/start',{method:'POST',body:new URLSearchParams({switch_account:String(switchAccount)})});const data=await response.json();
+      if(!response.ok){if(authWindow)authWindow.close();throw new Error(data.detail||'无法获取授权链接');}
+      baiduAuthLink.href=data.auth_url;baiduAuthLink.textContent='前往百度确认授权';
+      document.getElementById('baiduAuthSubtitle').textContent='新授权链接已生成，请在百度页面确认授权。';
+      baiduAuthModal.classList.remove('hidden');baiduAuthModal.classList.add('grid');
+      if(authWindow)authWindow.location.replace(data.auth_url);
+    }
+    const baiduCompleteButton=document.getElementById('baiduCompleteButton');
+    const refreshBaiduAuthLink=document.getElementById('refreshBaiduAuthLink');
+    refreshBaiduAuthLink.addEventListener('click',async()=>{
+      baiduAuthCode.value='';baiduCompleteButton.disabled=false;baiduCompleteButton.textContent='完成授权并选择网盘视频';
+      ProcessingState.start(refreshBaiduAuthLink,'正在获取新授权链接…');
+      try{await openBaiduAuthorization(false,true);}catch(error){showBaiduAuthError(error.message);}
+      finally{ProcessingState.stop(refreshBaiduAuthLink);}
+    });
+    const baiduFileForm=document.getElementById('baiduFileForm');
+    const baiduFileHint=document.getElementById('baiduFileHint');
+    const baiduBrowser=document.getElementById('baiduBrowser');
+    const baiduFileList=document.getElementById('baiduFileList');
+    const baiduRemotePath=document.getElementById('baiduRemotePath');
+    const baiduSelectedFile=document.getElementById('baiduSelectedFile');
+    const importBaiduFileButton=document.getElementById('importBaiduFileButton');
+    const authorizeBaiduButton=document.getElementById('authorizeBaiduButton');
+    const baiduTotalBytes=document.getElementById('baiduTotalBytes');
+    const baiduDownloadProgress=document.getElementById('baiduDownloadProgress');
+    const baiduDownloadText=document.getElementById('baiduDownloadText');
+    const baiduDownloadPercent=document.getElementById('baiduDownloadPercent');
+    const baiduDownloadBar=document.getElementById('baiduDownloadBar');
+    function syncBaiduAuthUI(authenticated){
+      baiduAuthenticated=authenticated;authorizeBaiduButton.disabled=authenticated;
+      authorizeBaiduButton.textContent=authenticated?'已授权百度网盘':'授权百度网盘';
+      authorizeBaiduButton.classList.toggle('bg-blue-600',!authenticated);authorizeBaiduButton.classList.toggle('bg-slate-300',authenticated);
+      authorizeBaiduButton.classList.toggle('text-slate-500',authenticated);authorizeBaiduButton.classList.toggle('cursor-not-allowed',authenticated);
+    }
+    function formatFileSize(size){if(!size)return '';const units=['B','KB','MB','GB'];let value=size,index=0;while(value>=1024&&index<units.length-1){value/=1024;index++;}return `${value.toFixed(index?1:0)} ${units[index]}`;}
+    function selectBaiduVideo(item){
+      baiduRemotePath.value=item.path;baiduTotalBytes.value=String(item.size||0);baiduSelectedFile.textContent=`已选择：${item.name} ${formatFileSize(item.size)}`;
+      baiduSelectedFile.classList.remove('hidden');importBaiduFileButton.disabled=false;
+      baiduFileList.querySelectorAll('button').forEach(button=>button.classList.toggle('ring-2',button.dataset.path===item.path));
+    }
+    async function loadBaiduFiles(path=''){
+      pendingBaiduBrowse=true;baiduFileHint.textContent='正在读取已授权的百度网盘文件…';
+      const response=await fetch(`/api/baidu/files?path=${encodeURIComponent(path)}`,{cache:'no-store'});let data={};try{data=await response.json();}catch(_){}
+      if(!response.ok){
+        baiduBrowser.classList.add('hidden');baiduFileHint.textContent=data.detail||'无法读取百度网盘文件';
+        if(response.status===401||(data.detail||'').includes('授权已失效')){syncBaiduAuthUI(false);try{await openBaiduAuthorization(false);}catch(error){baiduFileHint.textContent=error.message;}}
+        return;
+      }
+      syncBaiduAuthUI(true);currentBaiduPath=data.path||'';document.getElementById('baiduCurrentPath').textContent=currentBaiduPath;
+      baiduFileHint.textContent='已连接百度网盘，请选择一个视频文件。';baiduBrowser.classList.remove('hidden');baiduFileList.replaceChildren();
+      if(!data.items.length){baiduFileList.innerHTML='<p class="py-6 text-center text-sm text-slate-400">此目录没有支持的视频或子目录</p>';return;}
+      data.items.forEach(item=>{
+        const button=document.createElement('button');button.type='button';button.dataset.path=item.path;
+        button.className='flex w-full items-center gap-3 rounded-xl border border-white/80 bg-white/70 px-4 py-3 text-left transition hover:bg-cyan-50';
+        button.innerHTML=`<span class="text-xl">${item.is_dir?'▣':'▶'}</span><span class="min-w-0 flex-1 truncate text-sm font-semibold text-slate-700"></span><span class="text-xs text-slate-400">${item.is_dir?'目录':formatFileSize(item.size)}</span>`;
+        button.querySelector('.font-semibold').textContent=item.name;button.addEventListener('click',()=>item.is_dir?loadBaiduFiles(item.path):selectBaiduVideo(item));baiduFileList.appendChild(button);
+      });
+    }
+    baiduCompleteButton.addEventListener('click',async()=>{
+      const code=baiduAuthCode.value.trim();if(!/^[a-fA-F0-9]{32}$/.test(code)){showBaiduAuthError('请粘贴本次百度授权页面显示的新32位授权码。');return;}
+      ProcessingState.start(baiduCompleteButton,'正在验证授权…');
+      const response=await fetch('/api/baidu-auth/complete',{method:'POST',body:new URLSearchParams({auth_code:code})});const data=await response.json();
+      if(!response.ok){ProcessingState.stop(baiduCompleteButton);baiduAuthCode.value='';showBaiduAuthError(data.detail||'授权失败');baiduCompleteButton.textContent='请先重新获取授权链接';return;}
+      syncBaiduAuthUI(true);baiduAuthCode.value='';ProcessingState.stop(baiduCompleteButton);baiduCompleteButton.textContent='完成授权并选择网盘视频';closeBaiduModal();if(pendingBaiduBrowse)await loadBaiduFiles('');
+    });
+    document.getElementById('authorizeBaiduButton').addEventListener('click',async event=>{ProcessingState.start(event.currentTarget);try{await openBaiduAuthorization(false,true);}catch(error){baiduFileHint.textContent=error.message;}finally{ProcessingState.stop(event.currentTarget);}});
+    document.getElementById('refreshBaiduFiles').addEventListener('click',async event=>{ProcessingState.start(event.currentTarget);try{await loadBaiduFiles(currentBaiduPath);}finally{ProcessingState.stop(event.currentTarget);}});
+    document.getElementById('baiduParentButton').addEventListener('click',()=>loadBaiduFiles(currentBaiduPath.split('/').slice(0,-1).join('/')));
+    document.querySelector('[data-source-tab="baidu"]').addEventListener('click',async()=>{
+      const response=await fetch('/api/baidu-auth/status',{cache:'no-store'});let data={};try{data=await response.json();}catch(_){}
+      syncBaiduAuthUI(response.ok&&Boolean(data.authenticated));if(baiduAuthenticated)await loadBaiduFiles(currentBaiduPath);else baiduFileHint.textContent='请先授权你自己的百度网盘账号。';
+    });
+    async function pollBaiduDownload(statusUrl){
+      const response=await fetch(statusUrl,{cache:'no-store'});let data={};try{data=await response.json();}catch(_){}
+      if(!response.ok||data.status==='failed'){
+        const message=data.message||data.detail||'网盘视频导入失败';baiduFileHint.textContent=message;baiduDownloadText.textContent=message;ProcessingState.stop(importBaiduFileButton);return;
+      }
+      baiduDownloadText.textContent=data.message||'正在下载视频…';
+      if(data.percent!==null&&data.percent!==undefined){baiduDownloadPercent.textContent=`${data.percent}%`;baiduDownloadBar.style.width=`${data.percent}%`;}
+      else{baiduDownloadPercent.textContent=formatFileSize(data.downloaded_bytes||0);baiduDownloadBar.style.width='35%';}
+      if(data.progress_url&&data.status!=='downloading'){location.href=data.progress_url;return;}
+      setTimeout(()=>pollBaiduDownload(statusUrl),700);
+    }
+    baiduFileForm.addEventListener('submit',async event=>{
+      event.preventDefault();if(!baiduRemotePath.value)return;ProcessingState.start(importBaiduFileButton);baiduDownloadProgress.classList.remove('hidden');
+      baiduDownloadText.textContent='正在创建下载任务…';baiduDownloadPercent.textContent='0%';baiduDownloadBar.style.width='0%';baiduFileHint.textContent='视频将在后台下载，可以查看实时进度。';
+      const response=await fetch('/upload-baidu-file',{method:'POST',body:new FormData(baiduFileForm)});let data={};try{data=await response.json();}catch(_){}
+      if(response.ok&&data.status_url){await pollBaiduDownload(data.status_url);return;}
+      const message=data.detail||'网盘视频导入失败';baiduFileHint.textContent=message;baiduDownloadText.textContent=message;ProcessingState.stop(importBaiduFileButton);
+      if(message.includes('授权已失效'))syncBaiduAuthUI(false);
+    });
+    const directUrlForm=document.getElementById('directUrlForm');
+    const directUrlHint=document.getElementById('directUrlHint');
+    const importDirectUrlButton=document.getElementById('importDirectUrlButton');
+    directUrlForm.addEventListener('submit',async event=>{
+      event.preventDefault();if(!directUrlForm.reportValidity())return;
+      const host=new URL(document.getElementById('directVideoUrl').value).hostname.toLowerCase();if(host==='pan.baidu.com'||host.endsWith('.pan.baidu.com')){directUrlHint.textContent='百度网盘链接不能作为直接链接导入，请切换到“百度网盘”选择已授权文件。';return;}
+      ProcessingState.start(importDirectUrlButton);directUrlHint.textContent='正在下载资源并创建剪辑任务，请勿关闭页面…';
+      const response=await fetch('/upload-url',{method:'POST',body:new FormData(directUrlForm)});let data={};try{data=await response.json();}catch(_){}
+      if(response.ok&&data.progress_url){location.href=data.progress_url;return;}
+      const message=data.detail||'直接链接导入失败';directUrlHint.textContent=message;ProcessingState.stop(importDirectUrlButton);
+    });
+
     const clipForm = document.getElementById('clipForm');
+    let localUploadInProgress = false;
+    document.addEventListener('click', event => {
+      if (!localUploadInProgress) return;
+      const link = event.target.closest('a[href]');
+      if (!link || link.target === '_blank') return;
+      event.preventDefault();
+      window.open(link.href, '_blank', 'noopener');
+    }, true);
+    window.addEventListener('beforeunload', event => {
+      if (!localUploadInProgress) return;
+      event.preventDefault();
+      event.returnValue = '';
+    });
     const portraitDetection = document.getElementById('portraitDetection');
     const portraitHint = document.getElementById('portraitHint');
 
     function syncPortraitMode(){
       portraitHint.textContent = portraitDetection.checked
-        ? '人物识别已开启；固定时长窗口仍可编辑，并用于后续按窗口查看人物结果。'
-        : '可随时开启或关闭；开启后将自动识别主要人物并供人工选择。';
+        ? '人物识别已开启；识别完成后仍可在完整时间条自由选择和组合片段。'
+        : '未启用人物识别；上传后可直接在完整时间条选择需要生成的片段。';
     }
     portraitDetection.addEventListener('change', syncPortraitMode);
     syncPortraitMode();
@@ -359,7 +818,8 @@
       if (prog) prog.classList.toggle('active', !!busy);
       const btn = form.querySelector('button[type="submit"]');
       if (btn) {
-        if (busy) { btn.setAttribute('disabled','disabled'); } else { btn.removeAttribute('disabled'); }
+        if (busy) ProcessingState.start(btn, '正在上传并创建任务…');
+        else ProcessingState.stop(btn);
       }
     }
     function setInlineProgress(form, percent, msg, isError){
@@ -395,10 +855,19 @@
 
         try {
           const fd = new FormData(form);
-          const respUrl = await new Promise((resolve, reject)=>{
+          const videoFile = fd.get('video');
+          if (!(videoFile instanceof File) || !videoFile.size) throw new Error('请选择视频文件。');
+          const params = new URLSearchParams({
+            portrait_detection: fd.get('portrait_detection') ? 'true' : 'false',
+            ost_autocut: fd.get('ost_autocut') ? 'true' : 'false',
+          });
+          const result = await new Promise((resolve, reject)=>{
             const xhr = new XMLHttpRequest();
-            xhr.open('POST', '/upload', true);
+            xhr.open('POST', `/upload-stream?${params}`, true);
             xhr.withCredentials = true;
+            xhr.responseType = 'json';
+            xhr.setRequestHeader('Content-Type', videoFile.type || 'application/octet-stream');
+            xhr.setRequestHeader('X-Video-Filename', encodeURIComponent(videoFile.name));
 
             // 真实的上传进度（基于文件 bytes）
             xhr.upload.addEventListener('progress', (ev)=>{
@@ -419,17 +888,12 @@
 
             xhr.onload = function(){
               try {
-                // /upload 返回 303 → 浏览器自动 follow 后 xhr.responseURL 是 /job/{id}/progress
-                if (xhr.status >= 200 && xhr.status < 400 && xhr.responseURL){
+                if (xhr.status >= 200 && xhr.status < 300 && xhr.response?.progress_url){
                   setInlineProgress(form, 100, '任务已创建，正在跳转进度页…', false);
-                  resolve(xhr.responseURL);
+                  resolve(xhr.response);
                 } else if (xhr.status >= 400){
-                  let msg = '上传失败，请重试（HTTP ' + xhr.status + '）';
-                  try {
-                    const txt = (xhr.responseText || '').replace(/<[^>]+>/g,'').trim();
-                    if (txt && txt.length < 200) msg = txt;
-                  } catch(_){}
-                  reject(new Error(msg));
+                  const detail = xhr.response?.detail;
+                  reject(new Error(detail || `上传失败，请重试（HTTP ${xhr.status}）`));
                 } else {
                   reject(new Error('服务器无响应，请稍后重试。'));
                 }
@@ -437,20 +901,19 @@
             };
             xhr.onerror = ()=> reject(new Error('网络异常，上传失败，请检查网络。'));
             xhr.onabort = ()=> reject(new Error('上传已取消。'));
-            xhr.send(fd);
+            localUploadInProgress = true;
+            xhr.send(videoFile);
           });
+          localUploadInProgress = false;
 
           // 保留 ~350ms 让用户看到 100% 再跳
-          const createdJobId = extractJobId(respUrl);
-          const submittedMinutes = Number(fd.get('segment_minutes'));
-          if (createdJobId && Number.isFinite(submittedMinutes) && submittedMinutes > 0) {
-            sessionStorage.setItem(`segmentMinutes:${createdJobId}`, String(submittedMinutes));
-          }
+          const respUrl = result.progress_url;
           setTimeout(()=>{
             window.location.assign(respUrl);
           }, 350);
 
         } catch (err) {
+          localUploadInProgress = false;
           console.error('[submit]', err);
           setInlineProgress(
             form, 100,

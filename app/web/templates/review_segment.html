@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>片段审核 · {{ job_id }} #{{ seg_idx+1 }}/{{ seg_total }}</title>
   <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+  <link rel="stylesheet" href="/static/processing-state.css">
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif; }
     .hero-grad { background: linear-gradient(135deg, #06b6d4 0%, #22d3ee 25%, #c084fc 60%, #f0abfc 80%, #ec4899 100%); background-attachment: fixed; }
@@ -138,11 +139,11 @@
 
       <!-- 操作按钮 -->
       <div class="flex flex-wrap items-center gap-3 pt-4 border-t border-slate-200">
-        <button type="button" id="skipBtn"
+        <button type="submit" id="skipBtn" data-processing-text="跳过中…"
           class="px-4 py-2 rounded-xl bg-slate-100 text-slate-600 font-semibold hover:bg-slate-200 transition">
           ⏭️ 跳过此片段
         </button>
-        <button type="submit" id="confirmBtn"
+        <button type="submit" id="confirmBtn" data-processing-text="提交中…"
           class="ml-auto btn-tea px-6 py-2 rounded-xl font-semibold text-white shadow-md transition transform hover:scale-[1.02] hover:shadow-lg active:scale-95">
           {{ '确认并进入下一段 →' if seg_idx+1 < seg_total else '确认并生成全部 →' }}
         </button>
@@ -373,7 +374,6 @@
     document.getElementById('skipBtn').onclick = () => {
       actionField.value = 'skip';
       subsegmentsJson.value = '[]';
-      form.submit();
     };
 
     // 提交前确保数据同步
@@ -437,5 +437,6 @@
     });
   </script>
   <div id="loadingMask" class="loading-mask"><div class="spinner"></div><div class="msg">处理中，请稍候…</div></div>
+  <script src="/static/processing-state.js"></script>
 </body>
 </html>

@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>任务列表 · 茶辑</title>
   <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+  <link rel="stylesheet" href="/static/processing-state.css">
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif; }
     .hero-grad { background: linear-gradient(135deg, #06b6d4 0%, #22d3ee 25%, #c084fc 60%, #f0abfc 80%, #ec4899 100%); background-attachment: fixed; }
@@ -136,7 +137,7 @@
       <div class="bg-card-ip rounded-2xl shadow-xl p-8 text-center">
         <div class="text-4xl mb-2">📭</div>
         <p class="text-slate-600 text-sm">当前没有处理中的任务。</p>
-        <a href="/" class="inline-block mt-4 btn-tea px-5 py-2 rounded-xl text-white text-sm font-semibold hover:shadow-md transition transform hover:scale-105">+ 新建任务</a>
+        <a href="/" data-processing-text="跳转中…" class="inline-block mt-4 btn-tea px-5 py-2 rounded-xl text-white text-sm font-semibold hover:shadow-md transition transform hover:scale-105">+ 新建任务</a>
       </div>
       {% else %}
       <div class="space-y-3">
@@ -176,7 +177,7 @@
               <p class="text-xs text-slate-400 mt-1">{{ job.render_progress.message }}</p>
               {% endif %}
             </div>
-            <a href="/job/{{ job.job_id }}/progress" class="shrink-0 btn-tea px-4 py-2 rounded-xl text-white text-sm font-semibold shadow-sm transition transform hover:scale-105">
+            <a href="/job/{{ job.job_id }}/progress" data-processing-text="跳转中…" class="shrink-0 btn-tea px-4 py-2 rounded-xl text-white text-sm font-semibold shadow-sm transition transform hover:scale-105">
               查看进度 →
             </a>
           </div>
@@ -229,7 +230,7 @@
 
     <!-- 底部链接 -->
     <div class="text-center pt-2">
-      <a href="/" class="inline-block px-4 py-2 rounded-xl bg-white/70 border border-white/60 text-slate-600 text-sm font-semibold hover:bg-white/90 transition">← 返回首页</a>
+      <a href="/" data-processing-text="返回中…" class="inline-block px-4 py-2 rounded-xl bg-white/70 border border-white/60 text-slate-600 text-sm font-semibold hover:bg-white/90 transition">← 返回首页</a>
     </div>
   </main>
 
@@ -348,5 +349,6 @@
     });
   </script>
   <div id="loadingMask" class="loading-mask"><div class="spinner"></div><div class="msg">处理中，请稍候…</div></div>
+  <script src="/static/processing-state.js"></script>
 </body>
 </html>

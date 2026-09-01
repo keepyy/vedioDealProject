@@ -169,7 +169,7 @@ def _probe_ffmpeg_capabilities() -> Dict[str, bool]:
             try:
                 sandbox.run([
                     "ffmpeg", "-y", "-v", "error",
-                    "-f", "lavfi", "-i", "testsrc2=size=32x32:rate=1",
+                    "-f", "lavfi", "-i", "testsrc2=size=320x240:rate=1",
                     "-frames:v", "1", "-t", "2", "-an",
                     "-c:v", "h264_nvenc",
                     "-f", "null", "-",
@@ -216,13 +216,13 @@ def _get_encoder() -> Tuple[List[str], str]:
         return (
             [
                 "-c:v", "h264_nvenc",
-                "-preset", "p4",
+                "-preset", "p2",
+                "-tune", "ll",
                 "-rc", "vbr",
-                "-cq", "24",
+                "-cq", "25",
                 "-b:v", "0",
-                "-rc-lookahead", "20",
-                "-spatial-aq", "1",
-                "-temporal-aq", "1",
+                "-rc-lookahead", "0",
+                "-bf", "0",
                 "-pix_fmt", "yuv420p",
             ],
             "h264_nvenc(GPU)",
@@ -290,26 +290,22 @@ def _safe_boxblur(w: int, h: int, strength: str = "medium") -> str:
     注意：**FFmpeg 7.x boxblur 选项名是 luma_radius / luma_power，不是 luma_r / luma_p**！
     之前的错误写法 `luma_r=3` 会导致 "Error applying option 'luma_r' to filter 'boxblur': Option not found"。
 
-    strength 映射到 luma 半径 r（按短边比例计算，同时强制每档至少差 1，保证视觉上有可感知差异）：
-      - "light":   轻度模糊（短边/12，上限 3，最小 1）→ 细节仍可辨认
-      - "medium":  中度模糊（短边/6，上限 6，最小 2） → 默认档，与 1/6 旧算法范围一致
-      - "strong":  重度模糊（短边/3，上限 10，最小 4）→ 几乎看不清，等价"半消除"
+    模糊半径需要随区域尺寸增长。旧实现把中度半径限制为 6px，在 2K/4K 视频上
+    几乎不可见，看起来像蒙版没有写入成品。这里按区域短边计算半径，并使用 FFmpeg
+    表达式限制其不超过当前色度平面的安全范围。
     """
+    short_edge = max(2, min(int(w), int(h)))
     if strength == "light":
-        divisor, r_min, r_max = 12, 1, 3
+        divisor, r_min, power = 18, 3, 2
     elif strength == "strong":
-        divisor, r_min, r_max = 3,  4, 10
-    else:  # medium / fallback
-        divisor, r_min, r_max = 6,  2, 6
-    short_edge = min(int(w), int(h))
-    r_calc = int(short_edge / divisor) if divisor > 0 else 0
-    r = max(r_min, min(r_max, r_calc))
-    p = 2  # luma power
-    # chroma 半径必须非常小（通常 1~2），因为 YUV420P 的 chroma 平面尺寸是 luma 的 1/4
-    cr = max(1, min(2, r // 3))
-    cp = 1
-    # 使用短名 lr / lp / cr / cp / ar / ap 是最通用的，兼容性最好
-    return f"boxblur=lr={r}:lp={p}:cr={cr}:cp={cp}:ar={cr}:ap={cp}"
+        divisor, r_min, power = 5, 12, 3
+    else:
+        divisor, r_min, power = 9, 7, 3
+    luma_limit = max(1, short_edge // 2)
+    chroma_limit = max(1, short_edge // 4)
+    radius = min(luma_limit, max(r_min, min(40, int(round(short_edge / divisor)))))
+    chroma_radius = min(chroma_limit, max(1, min(20, radius // 2)))
+    return f"boxblur=lr={radius}:lp={power}:cr={chroma_radius}:cp={power}:ar=0:ap=0"
 
 
 def _solid_cover(w: int, h: int, color: str = "black") -> str:
@@ -573,6 +569,7 @@ def cut_and_process_segment(
                 raise
         return _publish_output()
 
+
     filter_str, _, _ = build_process_filter(
         info, banner_region=None, logos=logos, mask_regions=mask_regions,
         crop_banner=False, fill_blur=False,
@@ -633,17 +630,14 @@ def cut_and_process_segment(
         if mask_regions:
             for idx, region in enumerate(mask_regions):
                 m = _normalize_mask(region)
-                w = max(1, min(m["w"], info.width - m["x"])); h = max(1, min(m["h"], info.height - m["y"]))
-                x = max(0, m["x"]); y = max(0, m["y"])
-                mb = f"[mb{idx}]"; out = f"[mk{idx}]"
-                if m["mode"] == "cover":
-                    # cover 模式：drawbox 黑色填满
-                    simple.append(f"{prev}crop={w}:{h}:{x}:{y},{_solid_cover(w, h, color='black')}{mb}")
-                else:
-                    # blur 模式：强度参数
-                    simple.append(f"{prev}crop={w}:{h}:{x}:{y},{_safe_boxblur(w, h, m['strength'])}{mb}")
-                simple.append(f"{prev}{mb}overlay={x}:{y}{out}")
-                prev = out
+                x = max(0, min(m["x"], info.width - 1))
+                y = max(0, min(m["y"], info.height - 1))
+                w = max(1, min(m["w"], info.width - x))
+                h = max(1, min(m["h"], info.height - y))
+                prev, segment = _mask_mode_chain(
+                    prev, x, y, w, h, m["mode"], m["strength"]
+                )
+                simple.append(segment)
         if info.width / info.height > 4 / 3:
             fallback_w = info.width + (info.width % 2)
             fallback_h = int(math.ceil(fallback_w * 3 / 4 / 2) * 2)
@@ -667,3 +661,69 @@ def cut_and_process_segment(
         ]
         sandbox.run(base2)
     return _publish_output()
+
+
+def prepend_cover_intro(
+    video_path: Path, source_path: Path, cover_time_sec: float, duration_sec: float = 2.0,
+) -> Path:
+    """截取指定画面，增强为 3840×2880，并作为静音片头写入成品视频。"""
+    output_path = video_path.with_name(f"{video_path.stem}.with-cover.mp4")
+    encoder, _ = _get_encoder()
+    filters = (
+        f"[0:v]select='eq(n,0)',scale=3840:2880:force_original_aspect_ratio=decrease,"
+        f"pad=3840:2880:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,"
+        f"fps=30,tpad=stop_mode=clone:stop_duration={duration_sec:.3f},"
+        f"trim=duration={duration_sec:.3f},setpts=PTS-STARTPTS[cover];"
+        f"[1:a]atrim=duration={duration_sec:.3f},asetpts=PTS-STARTPTS[covera];"
+        "[2:v]scale=3840:2880:force_original_aspect_ratio=decrease,"
+        "pad=3840:2880:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1,fps=30,setpts=PTS-STARTPTS[main];"
+        "[2:a]aresample=48000,asetpts=PTS-STARTPTS[maina];"
+        "[cover][covera][main][maina]concat=n=2:v=1:a=1[v][a]"
+    )
+    try:
+        sandbox.run([
+            "ffmpeg", "-y", "-ss", f"{cover_time_sec:.3f}", "-i", str(source_path),
+            "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=48000",
+            "-i", str(video_path), "-filter_complex", filters,
+            "-map", "[v]", "-map", "[a]", *encoder,
+            "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", str(output_path),
+        ])
+        rendered = probe_video(output_path)
+        if rendered.width != 3840 or rendered.height != 2880 or rendered.duration <= duration_sec:
+            raise RuntimeError("4K 封面片头生成结果不正确")
+        video_path.unlink(missing_ok=True)
+        output_path.replace(video_path)
+        return video_path
+    finally:
+        output_path.unlink(missing_ok=True)
+
+
+def concat_processed_segments(input_paths: List[Path], output_path: Path) -> Path:
+    """按给定顺序无损拼接已经统一编码和规格的 4:3 片段。"""
+    if not input_paths:
+        raise ValueError("至少需要一个待合成片段")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    if len(input_paths) == 1:
+        output_path.unlink(missing_ok=True)
+        input_paths[0].replace(output_path)
+        return output_path
+    list_path = output_path.with_suffix(".concat.txt")
+    part_path = output_path.with_name(f"{output_path.stem}.part{output_path.suffix}")
+    try:
+        lines = [f"file '{path.resolve().as_posix()}'" for path in input_paths]
+        list_path.write_text("\n".join(lines), encoding="utf-8")
+        sandbox.run([
+            "ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(list_path),
+            "-c", "copy", "-movflags", "+faststart", str(part_path),
+        ])
+        rendered = probe_video(part_path)
+        if part_path.stat().st_size <= 0 or rendered.duration < 0.1:
+            raise RuntimeError("合成视频为空")
+        output_path.unlink(missing_ok=True)
+        part_path.replace(output_path)
+        return output_path
+    finally:
+        list_path.unlink(missing_ok=True)
+        part_path.unlink(missing_ok=True)
+        for path in input_paths:
+            path.unlink(missing_ok=True)

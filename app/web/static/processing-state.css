@@ -1,0 +1,32 @@
+@keyframes processing-state-spin {
+  to { transform: rotate(360deg); }
+}
+
+.is-processing {
+  background: #a9bdb5 !important;
+  background-image: linear-gradient(90deg, #9fb8b1, #c8b7b0 52%, #efb9aa) !important;
+  border-color: rgba(255, 255, 255, 0.48) !important;
+  color: rgba(255, 255, 255, 0.92) !important;
+  box-shadow: 0 7px 18px rgba(100, 116, 139, 0.2) !important;
+  cursor: not-allowed !important;
+  pointer-events: none;
+  opacity: 1 !important;
+  transform: none !important;
+  filter: saturate(0.72);
+}
+
+button.is-processing:disabled {
+  opacity: 1 !important;
+}
+
+.processing-state-spinner {
+  display: inline-block;
+  width: 0.9em;
+  height: 0.9em;
+  margin-right: 0.45em;
+  vertical-align: -0.08em;
+  border: 2px solid rgba(255, 255, 255, 0.38);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: processing-state-spin 0.7s linear infinite;
+}

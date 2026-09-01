@@ -209,7 +209,7 @@ class PortraitWorkflowTests(unittest.TestCase):
         self.assertEqual(2, result["current_segment_idx"])
         self.assertEqual("completed", result["status"])
 
-    def test_render_keeps_subsegments_as_separate_outputs(self):
+    def test_render_groups_subsegments_by_output_group(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             nodes = WorkflowNodes()
             state = WorkflowState({
@@ -225,22 +225,23 @@ class PortraitWorkflowTests(unittest.TestCase):
                     "end_sec": 60.0,
                     "final_end_sec": 60.0,
                     "subsegments": [
-                        {"start_sec": 5.0, "end_sec": 10.0},
-                        {"start_sec": 20.0, "end_sec": 30.0},
+                        {"start_sec": 5.0, "end_sec": 10.0, "output_group": 1},
+                        {"start_sec": 20.0, "end_sec": 30.0, "output_group": 1},
                     ],
                     "status": "human_review",
                 }],
             })
             with patch.object(WorkflowNodes, "storage", new_callable=PropertyMock,
                               return_value=Path(temp_dir)), \
-                    patch("app.agents.workflow.ffmpeg_proc.cut_and_process_segment") as cut:
+                    patch("app.agents.workflow.ffmpeg_proc.cut_and_process_segment") as cut, \
+                    patch("app.agents.workflow.ffmpeg_proc.concat_processed_segments") as concat:
                 nodes.render_segment(state)
 
         self.assertEqual(2, cut.call_count)
+        concat.assert_called_once()
         outputs = state["final_outputs"]
-        self.assertEqual(2, len(outputs))
-        self.assertTrue(outputs[0].endswith("seg00_sub00.mp4"))
-        self.assertTrue(outputs[1].endswith("seg00_sub01.mp4"))
+        self.assertEqual(1, len(outputs))
+        self.assertTrue(outputs[0].endswith("output_group_01.mp4"))
         self.assertEqual(outputs, state["segments"][0]["output_paths"])
         self.assertEqual(outputs[0], state["segments"][0]["output_path"])
         self.assertEqual("rendered", state["segments"][0]["status"])

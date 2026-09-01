@@ -12,6 +12,25 @@ class Settings(BaseSettings):
     app_host: str = "0.0.0.0"
     app_port: int = 8000
     storage_dir: str = "./storage"
+    public_base_url: str = ""
+
+    # 百度网盘开放平台（未配置时回退 bdpan）
+    baidu_app_key: str = ""
+    baidu_app_secret: str = ""
+    baidu_app_name: str = "bdpan"
+    baidu_oauth_redirect_uri: str = "oob"
+    baidu_aria2_connections: int = 8
+    baidu_aria2_split: int = 8
+    baidu_aria2_min_split_size: str = "1M"
+
+    # 飞书 Bot
+    feishu_enabled: bool = False
+    feishu_app_id: str = ""
+    feishu_app_secret: str = ""
+    feishu_verification_token: str = ""
+    feishu_encrypt_key: str = ""
+    feishu_request_timeout_sec: float = 30.0
+    feishu_download_timeout_sec: float = 1800.0
 
     # 沙箱
     sandbox_image: str = "vedio-agent-worker:latest"

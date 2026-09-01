@@ -15,10 +15,12 @@ from __future__ import annotations
 import json
 import logging
 import math
+import shutil
 import threading
 import time
 import urllib.request
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -126,25 +128,42 @@ class WorkflowNodes:
         try:
             output_files = []
             if subsegments:
-                # 每个审核通过的不连续子片段独立生成，不执行视频合并。
-                for i, sub in enumerate(subsegments):
-                    sub_file = out_dir / f"seg{cur:02d}_sub{i:02d}.mp4"
-                    ffmpeg_proc.cut_and_process_segment(
-                        video_path=Path(state["upload_path"]),
-                        start_sec=float(sub["start_sec"]),
-                        end_sec=float(sub["end_sec"]),
-                        output_path=sub_file,
-                        banner_region=None,
-                        logos=state.get("logo_regions") or [],
-                        mask_regions=state.get("mask_regions") or [],
+                groups: Dict[int, List[Dict]] = {}
+                for index, sub in enumerate(subsegments):
+                    group = max(1, int(sub.get("output_group", index + 1)))
+                    groups.setdefault(group, []).append(sub)
+                for group, grouped_segments in sorted(groups.items()):
+                    ordered_segments = sorted(grouped_segments, key=lambda item: item["start_sec"])
+                    grouped_file = out_dir / f"output_group_{group:02d}.mp4"
+                    parts = [
+                        grouped_file if len(ordered_segments) == 1 else out_dir / f"seg{cur:02d}_group{group:02d}_part{i:02d}.mp4"
+                        for i in range(len(ordered_segments))
+                    ]
+                    def render_part(index: int) -> None:
+                        sub = ordered_segments[index]
+                        ffmpeg_proc.cut_and_process_segment(
+                            video_path=Path(state["upload_path"]),
+                            start_sec=float(sub["start_sec"]),
+                            end_sec=float(sub["end_sec"]),
+                            output_path=parts[index],
+                            banner_region=None,
+                            logos=state.get("logo_regions") or [],
+                            mask_regions=state.get("mask_regions") or [],
+                        )
+                    if len(parts) > 1:
+                        with ThreadPoolExecutor(max_workers=min(3, len(parts))) as executor:
+                            list(executor.map(render_part, range(len(parts))))
+                    else:
+                        render_part(0)
+                    if len(parts) > 1:
+                        ffmpeg_proc.concat_processed_segments(parts, grouped_file)
+                    cover_time = (state.get("output_covers") or {}).get(group)
+                    if cover_time is None:
+                        raise RuntimeError(f"成品组 {group} 未选择封面画面")
+                    ffmpeg_proc.prepend_cover_intro(
+                        grouped_file, Path(state["upload_path"]), float(cover_time), 2.0,
                     )
-                    # #region debug-point C:D:E:output-probe
-                    try:
-                        _probe = ffmpeg_proc.probe_video(sub_file); _payload = json.dumps({"sessionId":"trailing-segment-corruption","runId":"pre-fix","hypothesisId":"C,D,E","location":"workflow.py:render_segment","msg":"[DEBUG] rendered output probe","data":{"jobId":state["job_id"],"window":cur,"subsegment":i,"requestedStart":float(sub["start_sec"]),"requestedEnd":float(sub["end_sec"]),"file":str(sub_file),"bytes":sub_file.stat().st_size,"outputDuration":_probe.duration,"width":_probe.width,"height":_probe.height,"codec":_probe.codec},"ts":int(time.time()*1000)}).encode(); urllib.request.urlopen(urllib.request.Request("http://host.docker.internal:7777/event",data=_payload,headers={"Content-Type":"application/json"}),timeout=1).read()
-                    except Exception:
-                        pass
-                    # #endregion
-                    output_files.append(str(sub_file))
+                    output_files.append(str(grouped_file))
             else:
                 ffmpeg_proc.cut_and_process_segment(
                     video_path=Path(state["upload_path"]),
@@ -225,11 +244,14 @@ class JobManager:
     @staticmethod
     def _plan_analysis_segments(state: WorkflowState) -> List[Dict[str, float]]:
         duration = float(state["video_info"]["duration"])
-        segment_seconds = int(state["segment_seconds"])
-        windows = [
-            {"start_sec": float(start), "end_sec": float(end)}
-            for start, end in ffmpeg_proc.plan_segments(duration, segment_seconds)
-        ]
+        segment_seconds = state.get("segment_seconds")
+        if segment_seconds is None:
+            windows = [{"start_sec": 0.0, "end_sec": duration}]
+        else:
+            windows = [
+                {"start_sec": float(start), "end_sec": float(end)}
+                for start, end in ffmpeg_proc.plan_segments(duration, int(segment_seconds))
+            ]
         state["analysis_segments"] = windows
         return windows
 
@@ -254,6 +276,68 @@ class JobManager:
                     cpu, mem, rendering_count, ok)
         return ok
 
+    def create_import_job(
+        self, upload_path: str, mode: str, status: str,
+        message: str, total_bytes: int = 0,
+    ) -> WorkflowState:
+        if mode not in ("manual", "portrait"):
+            raise ValueError("不支持的任务模式")
+        job_id = uuid.uuid4().hex[:12]
+        state: WorkflowState = WorkflowState({
+            "job_id": job_id,
+            "upload_path": upload_path,
+            "segment_seconds": None,
+            "mode": mode,
+            "portrait_paths": [],
+            "ost_autocut": False,
+            "final_outputs": [],
+            "segments": [],
+            "mask_regions": [],
+            "logo_regions": [],
+            "banner_region": None,
+            "status": status,
+            "created_at": time.time(),
+            "render_progress": {
+                "current_seg": 0,
+                "total_segs": 0,
+                "status": status,
+                "message": message,
+                "downloaded_bytes": 0,
+                "total_bytes": total_bytes,
+                "percent": 0 if total_bytes else None,
+            },
+        })
+        with self._lock:
+            self.jobs[job_id] = state
+        return state
+
+    def update_import_job(self, job_id: str, **progress: Any) -> None:
+        with self._lock:
+            state = self.jobs.get(job_id)
+            if not state:
+                return
+            state["render_progress"].update(progress)
+            if "status" in progress:
+                state["status"] = progress["status"]
+
+    def finalize_import_job(self, job_id: str, upload_path: str) -> WorkflowState:
+        with self._lock:
+            state = self.jobs.get(job_id)
+            if not state:
+                raise ValueError("任务不存在")
+            state["upload_path"] = upload_path
+            state["status"] = "initializing"
+            state["render_progress"] = {
+                "current_seg": 0, "total_segs": 0,
+                "status": "initializing", "message": "正在初始化视频剪辑…",
+            }
+        nodes.init_job(state)
+        threading.Thread(
+            target=self._prepare_editing_in_background,
+            args=(job_id,), daemon=True, name=f"prepare-{job_id}",
+        ).start()
+        return state
+
     # ---- 阶段1：上传 → init（同步） → detect（后台线程） ----
     def new_job(
         self, upload_path: str, segment_seconds: Optional[int],
@@ -262,17 +346,19 @@ class JobManager:
     ) -> WorkflowState:
         if mode not in ("manual", "portrait"):
             raise ValueError("不支持的任务模式")
-        raw_segment_seconds = segment_seconds or settings.default_segment_seconds
-        try:
-            numeric_segment_seconds = float(raw_segment_seconds)
-        except (TypeError, ValueError) as exc:
-            raise ValueError("分割时长必须为 1..180 的整数分钟") from exc
-        if (not math.isfinite(numeric_segment_seconds)
-                or not numeric_segment_seconds.is_integer()):
-            raise ValueError("分割时长必须为 1..180 的整数分钟")
-        seg_secs = int(numeric_segment_seconds)
-        if seg_secs < 60 or seg_secs > 180 * 60 or seg_secs % 60:
-            raise ValueError("分割时长必须为 1..180 的整数分钟")
+        seg_secs = None
+        if segment_seconds != 0:
+            raw_segment_seconds = settings.default_segment_seconds if segment_seconds is None else segment_seconds
+            try:
+                numeric_segment_seconds = float(raw_segment_seconds)
+            except (TypeError, ValueError) as exc:
+                raise ValueError("分割时长必须为 1..180 的整数分钟") from exc
+            if (not math.isfinite(numeric_segment_seconds)
+                    or not numeric_segment_seconds.is_integer()):
+                raise ValueError("分割时长必须为 1..180 的整数分钟")
+            seg_secs = int(numeric_segment_seconds)
+            if seg_secs < 60 or seg_secs > 180 * 60 or seg_secs % 60:
+                raise ValueError("分割时长必须为 1..180 的整数分钟")
         job_id = uuid.uuid4().hex[:12]
         state: WorkflowState = WorkflowState({
             "job_id": job_id,
@@ -557,6 +643,9 @@ class JobManager:
                     nodes.render_segment(state)
                     if state["segments"][seg_idx].get("status") == "failed":
                         raise RuntimeError(state["segments"][seg_idx].get("error") or "片段渲染失败")
+                if state.get("cancel_requested"):
+                    self._finish_cancel(job_id, state)
+                    return
 
                 # 生成下一个待处理窗口的预览，跨过预先跳过的窗口。
                 segs = state.get("segments") or []
@@ -768,6 +857,25 @@ class JobManager:
         if set(submitted) != set(range(len(windows))):
             raise ValueError("必须提交全部固定窗口且每个窗口恰好一次")
 
+        # 固定时长仅用于初始切分；编辑页可移动相邻窗口的共享边界。
+        adjusted_windows = []
+        for window_idx, original in enumerate(windows):
+            selection = submitted[window_idx]
+            try:
+                start = float(selection.get("window_start_sec", original["start_sec"]))
+                end = float(selection.get("window_end_sec", original["end_sec"]))
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"窗口 {window_idx + 1} 的边界格式无效") from exc
+            if not math.isfinite(start) or not math.isfinite(end) or start < 0 or end > duration or end <= start:
+                raise ValueError(f"窗口 {window_idx + 1} 的边界无效")
+            if adjusted_windows and abs(start - adjusted_windows[-1]["end_sec"]) > 0.01:
+                raise ValueError("相邻窗口边界必须连续")
+            adjusted_windows.append({"start_sec": start, "end_sec": end})
+        if abs(adjusted_windows[0]["start_sec"]) > 0.01 or abs(adjusted_windows[-1]["end_sec"] - duration) > 0.01:
+            raise ValueError("窗口必须完整覆盖原视频")
+        windows = adjusted_windows
+        state["analysis_segments"] = windows
+
         segs = []
         selected_ids = set()
         for window_idx, window in enumerate(windows):
@@ -785,6 +893,14 @@ class JobManager:
             start, end = float(window["start_sec"]), float(window["end_sec"])
             raw_subsegments = selection.get("subsegments", [])
             subsegments = self._normalize_intervals(raw_subsegments, duration)
+            for index, item in enumerate(subsegments):
+                raw_item = next((raw for raw in raw_subsegments
+                                 if abs(float(raw.get("start_sec", -1)) - item["start_sec"]) < 1e-6
+                                 and abs(float(raw.get("end_sec", -1)) - item["end_sec"]) < 1e-6), {})
+                try:
+                    item["output_group"] = max(1, int(raw_item.get("output_group", index + 1)))
+                except (TypeError, ValueError):
+                    item["output_group"] = index + 1
             if enabled and not subsegments:
                 raise ValueError(f"窗口 {window_idx + 1} 启用时至少需要一个有效子片段")
             if any(item["start_sec"] < start or item["end_sec"] > end
@@ -800,6 +916,31 @@ class JobManager:
                 "preview_path": "", "output_path": "",
                 "status": "pending" if enabled else "skipped", "error": "",
             })
+
+        all_subsegments = [item for seg in segs for item in seg.get("subsegments") or []]
+        output_groups = {int(item["output_group"]) for item in all_subsegments}
+        output_covers = {
+            int(group): float(value)
+            for group, value in (state.get("output_covers") or {}).items()
+            if int(group) in output_groups
+        }
+        if output_groups != set(output_covers):
+            raise ValueError("每个成品盒必须且只能选择一个封面画面")
+        state["output_covers"] = output_covers
+        for group in output_groups:
+            cover_time = float(output_covers[group])
+            group_segments = [item for item in all_subsegments if int(item["output_group"]) == group]
+            if not any(item["start_sec"] <= cover_time <= item["end_sec"] for item in group_segments):
+                raise ValueError(f"成品盒 {group} 的封面必须来自该成品包含的片段")
+
+        # 跨窗口的同一成品组统一交给一个渲染批次，避免后续窗口覆盖同名成品。
+        enabled_indices = [idx for idx, seg in enumerate(segs) if seg["status"] == "pending"]
+        if enabled_indices:
+            primary = enabled_indices[0]
+            segs[primary]["subsegments"] = sorted(all_subsegments, key=lambda item: item["start_sec"])
+            for idx in enabled_indices[1:]:
+                segs[idx]["subsegments"] = []
+                segs[idx]["status"] = "skipped"
 
         state["selected_person_ids"] = sorted(selected_ids)
         state["window_selections"] = window_selections
@@ -843,6 +984,15 @@ class JobManager:
             with self._lock:
                 state = self.jobs[job_id]
             try:
+                upload_path = Path(state.get("upload_path", ""))
+                upload_size = upload_path.stat().st_size if upload_path.is_file() else 0
+                free_space = shutil.disk_usage(settings.storage_path).free
+                required_space = max(1024 * 1024 * 1024, upload_size * 2)
+                if free_space < required_space:
+                    raise RuntimeError(
+                        f"存储空间不足：当前可用 {free_space / 1024**3:.2f}GB，"
+                        f"生成该视频至少需要约 {required_space / 1024**3:.2f}GB，请清理磁盘后重试"
+                    )
                 segs = state.get("segments") or []
                 pending_indices = [
                     idx for idx, seg in enumerate(segs)
@@ -863,6 +1013,9 @@ class JobManager:
                         raise RuntimeError(
                             segs[seg_idx].get("error") or f"第 {seg_idx + 1} 个窗口渲染失败"
                         )
+                    if state.get("cancel_requested"):
+                        self._finish_cancel(job_id, state)
+                        return
 
                 with self._lock:
                     state["status"] = "completed"
@@ -876,6 +1029,10 @@ class JobManager:
                             job_id, len(state.get("final_outputs") or []))
             except Exception as e:
                 logger.exception("[%s] 人像模式批量生成失败: %s", job_id, e)
+                output_dir = settings.storage_path / "final" / job_id
+                for pattern in ("*.part.mp4", "*_part*.mp4", "*.concat.txt"):
+                    for temporary in output_dir.glob(pattern):
+                        temporary.unlink(missing_ok=True)
                 with self._lock:
                     state["status"] = "failed"
                     state["render_progress"] = {
@@ -887,6 +1044,34 @@ class JobManager:
                         "status": "error",
                         "message": str(e),
                     }
+
+    def _remove_job_files(self, job_id: str, state: WorkflowState) -> None:
+        upload_path = Path(state.get("upload_path", ""))
+        if upload_path.is_file():
+            upload_path.unlink(missing_ok=True)
+        for subdir in ("segments", "final", "frames"):
+            shutil.rmtree(settings.storage_path / subdir / job_id, ignore_errors=True)
+
+    def _finish_cancel(self, job_id: str, state: WorkflowState) -> None:
+        with self._lock:
+            self.jobs.pop(job_id, None)
+            self._job_locks.pop(job_id, None)
+        self._remove_job_files(job_id, state)
+
+    def cancel_job(self, job_id: str) -> None:
+        """取消任务；渲染中的任务在当前 FFmpeg 操作结束后停止。"""
+        with self._lock:
+            state = self.jobs.get(job_id)
+            if not state:
+                raise ValueError("任务不存在")
+            if state.get("status") == "rendering":
+                state["cancel_requested"] = True
+                state["status"] = "cancelling"
+                state["render_progress"] = {
+                    "status": "cancelling", "message": "正在取消任务并清理文件…",
+                }
+                return
+        self._finish_cancel(job_id, state)
 
     # ---- 任务列表 ----
     def get_all_jobs(self) -> List[Dict[str, Any]]:
@@ -904,6 +1089,7 @@ class JobManager:
                 "render_progress": state.get("render_progress", {}),
                 "final_outputs_count": len(state.get("final_outputs", [])),
                 "segments_total": len(state.get("segments", [])),
+                "current_segment_idx": state.get("current_segment_idx", 0),
             })
         # 按创建时间倒序
         result.sort(key=lambda x: x.get("created_at", 0), reverse=True)

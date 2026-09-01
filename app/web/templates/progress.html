@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>任务进度 · {{ job_id }}</title>
   <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+  <link rel="stylesheet" href="/static/processing-state.css">
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif; }
     .hero-grad { background: linear-gradient(135deg, #06b6d4 0%, #22d3ee 25%, #c084fc 60%, #f0abfc 80%, #ec4899 100%); background-attachment: fixed; }
@@ -141,8 +142,13 @@
 
       <!-- 操作按钮 -->
       <div id="actionRow" class="flex flex-wrap gap-2 pt-2 border-t border-slate-200">
+        {% if state.status not in ['completed', 'cancelling'] %}
+        <form id="cancelForm" method="post" action="/job/{{ job_id }}/cancel">
+          <button type="button" id="openCancelModal" class="px-5 py-2 rounded-xl border border-red-300 bg-red-50 text-red-700 text-sm font-semibold hover:bg-red-100 transition">取消任务</button>
+        </form>
+        {% endif %}
         {% if state.status == 'reviewing_segment' %}
-        <a id="continueReviewBtn" href="/job/{{ job_id }}/review-segment/{{ current_segment_idx }}" class="ml-auto btn-tea px-5 py-2 rounded-xl text-white text-sm font-semibold shadow-md transition transform hover:scale-[1.02] hover:shadow-lg active:scale-95">下一步：审核片段 →</a>
+        <a id="continueReviewBtn" href="/job/{{ job_id }}/review-segment/{{ current_segment_idx }}" data-processing-text="跳转中…" class="ml-auto btn-tea px-5 py-2 rounded-xl text-white text-sm font-semibold shadow-md transition transform hover:scale-[1.02] hover:shadow-lg active:scale-95">下一步：审核片段 →</a>
         {% endif %}
         {% if state.status == 'completed' %}
         <a href="/job/{{ job_id }}/done" class="ml-auto btn-tea px-5 py-2 rounded-xl text-white text-sm font-semibold shadow-md transition transform hover:scale-[1.02] hover:shadow-lg active:scale-95">查看结果 →</a>
@@ -176,12 +182,23 @@
     <div class="text-center space-y-3">
       <p class="text-xs text-white/85">你可以离开此页面，稍后在任务列表中查看进度</p>
       <div class="flex flex-wrap justify-center gap-3">
-        <a href="/" class="px-4 py-2 rounded-xl bg-white/70 border border-white/60 text-slate-600 text-sm font-semibold hover:bg-white/90 transition">← 返回首页</a>
-        <a href="/tasks" class="px-4 py-2 rounded-xl bg-white/70 border border-white/60 text-slate-600 text-sm font-semibold hover:bg-white/90 transition">查看任务列表</a>
+        <a href="/" data-processing-text="返回中…" class="px-4 py-2 rounded-xl bg-white/70 border border-white/60 text-slate-600 text-sm font-semibold hover:bg-white/90 transition">← 返回首页</a>
+        <a href="/tasks" data-processing-text="跳转中…" class="px-4 py-2 rounded-xl bg-white/70 border border-white/60 text-slate-600 text-sm font-semibold hover:bg-white/90 transition">查看任务列表</a>
       </div>
     </div>
   </main>
 
+  <div id="cancelModal" class="hidden fixed inset-0 z-[95] place-items-center bg-slate-950/55 p-4 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="cancelModalTitle">
+    <div class="w-full max-w-sm rounded-3xl border border-white/70 bg-white/95 p-6 text-center shadow-2xl">
+      <div class="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-red-50 text-2xl font-bold text-red-600">!</div>
+      <h2 id="cancelModalTitle" class="mt-4 text-xl font-bold text-slate-800">取消当前任务？</h2>
+      <p class="mt-2 text-sm leading-6 text-slate-600">上传、下载及已生成的任务文件将被删除，此操作无法撤销。</p>
+      <div class="mt-6 flex justify-center gap-3">
+        <button type="button" id="closeCancelModal" class="px-5 py-2.5 rounded-xl bg-slate-100 text-slate-700 font-semibold">继续处理</button>
+        <button type="button" id="confirmCancelJob" class="px-5 py-2.5 rounded-xl bg-red-600 text-white font-semibold shadow">确认取消</button>
+      </div>
+    </div>
+  </div>
   <script>
     const jobId = "{{ job_id }}";
     const statusText = document.getElementById('statusText');
@@ -196,8 +213,23 @@
     const errorBox = document.getElementById('errorBox');
     const errorText = document.getElementById('errorText');
     const actionRow = document.getElementById('actionRow');
+    const cancelModal = document.getElementById('cancelModal');
+    function setCancelModal(open) {
+      cancelModal.classList.toggle('hidden', !open);
+      cancelModal.classList.toggle('grid', open);
+    }
+    document.getElementById('openCancelModal')?.addEventListener('click', () => setCancelModal(true));
+    document.getElementById('closeCancelModal').addEventListener('click', () => setCancelModal(false));
+    cancelModal.addEventListener('click', event => { if (event.target === cancelModal) setCancelModal(false); });
+    document.getElementById('confirmCancelJob').addEventListener('click', () => {
+      document.getElementById('cancelForm')?.requestSubmit();
+    });
 
     const STATUS_LABEL = {
+      'uploading': '正在上传视频…',
+      'downloading': '正在从百度网盘下载…',
+      'importing': '正在导入链接视频…',
+      'initializing': '正在初始化视频…',
       'rendering': '正在渲染…',
       'detecting': '正在检测画面区域…（完成后会自动跳转）',
       'portrait_matching': '正在执行人像匹配…（完成后会自动跳转）',
@@ -205,6 +237,7 @@
       'reviewing_windows': '固定窗口已就绪，进入统一剪辑页面…',
       'reviewing_segment': '下一段已就绪',
       'completed': '任务完成',
+      'cancelling': '正在取消任务…',
       'failed': '任务失败',
       'pending': '排队中…',
     };
@@ -258,6 +291,8 @@
     function setActionButtons(status, curIdx){
       // 清除已有的动态按钮（保留底部链接所在行结构）
       actionRow.querySelectorAll('[data-dyn]').forEach(el => el.remove());
+      const cancelForm = actionRow.querySelector('form[action$="/cancel"]');
+      if (cancelForm) cancelForm.classList.toggle('hidden', ['completed', 'cancelling'].includes(status));
       if (status === 'reviewing_segment' && window.currentJobMode !== 'portrait'){
         const a = document.createElement('a');
         a.setAttribute('data-dyn', '1');
@@ -268,6 +303,7 @@
       } else if (status === 'completed'){
         const a = document.createElement('a');
         a.setAttribute('data-dyn', '1');
+        a.dataset.processingText = '跳转中…';
         a.href = `/job/${jobId}/done`;
         a.className = 'ml-auto btn-tea px-5 py-2 rounded-xl text-white text-sm font-semibold shadow-md transition transform hover:scale-[1.02] hover:shadow-lg active:scale-95';
         a.textContent = '查看结果 →';
@@ -289,9 +325,11 @@
       outputsCount.textContent = done;
       segmentsTotal.textContent = total;
 
-      // 百分比：有已渲染段数 → 用渲染进度；否则人像扫描阶段 → 用扫描帧进度；否则 0
+      // 导入阶段直接使用后端下载百分比；进入处理后再按片段计算。
       let pct;
-      if (total > 0) {
+      if (['uploading', 'downloading', 'importing'].includes(status) && typeof rp.percent === 'number') {
+        pct = Math.max(0, Math.min(100, rp.percent));
+      } else if (total > 0) {
         pct = fmtPct(done, total);
       } else if (rp && typeof rp.total_segs === 'number' && rp.total_segs > 0) {
         const cur = Math.min(Math.max(0, rp.current_seg || 0), rp.total_segs);
@@ -416,5 +454,6 @@
     });
   </script>
   <div id="loadingMask" class="loading-mask"><div class="spinner"></div><div class="msg">处理中，请稍候…</div></div>
+  <script src="/static/processing-state.js"></script>
 </body>
 </html>

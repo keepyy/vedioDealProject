@@ -742,14 +742,14 @@ def _baidu_download_command(user_id: int, normalized: str, target: Path) -> tupl
         raise RuntimeError("百度网盘未返回文件下载地址")
     separator = "&" if "?" in files[0]["dlink"] else "?"
     download_url = f"{files[0]['dlink']}{separator}access_token={access_token}"
-    connections = min(4, max(1, settings.baidu_aria2_connections))
+    connections = min(16, max(1, settings.baidu_aria2_connections))
     splits = min(connections, max(1, settings.baidu_aria2_split))
     command = [
         "aria2c", "--allow-overwrite=true", "--auto-file-renaming=false", "--continue=true",
         f"--max-connection-per-server={connections}", f"--split={splits}",
         f"--min-split-size={settings.baidu_aria2_min_split_size}", "--file-allocation=none",
-        "--max-tries=8", "--retry-wait=5", "--timeout=60", "--connect-timeout=30",
-        "--lowest-speed-limit=1K", "--summary-interval=1",
+        "--reuse-uri=true", "--enable-http-pipelining=true", "--max-tries=8", "--retry-wait=5",
+        "--timeout=60", "--connect-timeout=30", "--lowest-speed-limit=1K", "--summary-interval=1",
         "--console-log-level=warn", "--user-agent=pan.baidu.com", "--input-file=-",
         f"--dir={target.parent}", f"--out={target.name}",
     ]

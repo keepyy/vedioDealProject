@@ -19,8 +19,8 @@ class Settings(BaseSettings):
     baidu_app_secret: str = ""
     baidu_app_name: str = "bdpan"
     baidu_oauth_redirect_uri: str = "oob"
-    baidu_aria2_connections: int = 8
-    baidu_aria2_split: int = 8
+    baidu_aria2_connections: int = 16
+    baidu_aria2_split: int = 16
     baidu_aria2_min_split_size: str = "1M"
 
     # 飞书 Bot

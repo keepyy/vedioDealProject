@@ -112,8 +112,8 @@ Invoke-WebRequest -UseBasicParsing http://localhost:8080/health
 | `BAIDU_APP_SECRET` | 空 | 百度开放平台 Secret Key |
 | `BAIDU_APP_NAME` | `bdpan` | 百度开放平台应用目录名 |
 | `BAIDU_OAUTH_REDIRECT_URI` | `oob` | 百度 OAuth 回调地址 |
-| `BAIDU_ARIA2_CONNECTIONS` | `8` | 百度官方直连最大连接数；应用当前最多使用 4 个 |
-| `BAIDU_ARIA2_SPLIT` | `8` | 百度官方直连分片数；应用当前不超过连接数 |
+| `BAIDU_ARIA2_CONNECTIONS` | `16` | 百度官方 dlink 直连连接数；应用当前最多使用 16 个 |
+| `BAIDU_ARIA2_SPLIT` | `16` | 百度官方直连分片数；应用当前不超过连接数；过高可能触发限流 |
 | `BAIDU_ARIA2_MIN_SPLIT_SIZE` | `1M` | aria2 最小分片大小 |
 | `GPU_DETECTOR_URL` | Docker 内部地址 | 人物识别服务地址 |
 | `DISABLE_HWACCEL` | `0` | 设置为 `1` 强制 FFmpeg 使用 CPU |
@@ -135,7 +135,7 @@ Invoke-WebRequest -UseBasicParsing http://localhost:8080/health
 2. 应用服务器启动 `aria2c`，直接连接百度下载节点/CDN。
 3. 视频下载到服务器的 `storage/raw` 后再交给 FFmpeg 处理。
 4. 浏览器不会直接下载百度链接，视频处理必须先在服务器落盘。
-5. 单个文件使用最多 4 个连接和分片，并启用断点续传、重试和禁用预分配。
+5. 单个文件默认使用 16 个连接和分片（代码上限 16），并启用断点续传、连接复用、重试和禁用预分配；如果出现 EOF、超时或限流，可将并发降回 4-8。
 
 ### 回退模式
 
